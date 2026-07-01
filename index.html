@@ -20,6 +20,8 @@
     --radius:18px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  @keyframes fadeIn{from{opacity:0;} to{opacity:1;}}
+  @keyframes fadeInUp{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
   body{
     margin:0; font-family:'Inter',sans-serif; color:var(--ink);
     background:
@@ -28,6 +30,7 @@
       var(--bg);
     min-height:100vh;
     padding-bottom:84px;
+    animation:fadeIn .35s ease-out;
   }
   h1,h2,h3{font-family:'Space Grotesk',sans-serif; margin:0;}
   .topbar{
@@ -51,6 +54,8 @@
     padding:16px;
     margin-bottom:14px;
     box-shadow:0 6px 18px -14px rgba(91,33,182,.35);
+    animation:fadeInUp .3s ease-out both;
+    transition:box-shadow .2s;
   }
   .card h3{font-size:14px; color:var(--ink-soft); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:.04em;}
 
@@ -64,14 +69,25 @@
   label{font-size:12px; color:var(--ink-soft); display:block; margin-bottom:6px; font-weight:500;}
   .field{margin-bottom:12px;}
 
+  .editor-wrap{position:relative; border:1.5px solid var(--line); border-radius:12px; overflow:hidden; background:var(--pink-soft);}
+  .editor-wrap textarea{border:none; border-radius:0; padding-left:56px; background:transparent; position:relative; z-index:1;}
+  .editor-gutter{
+    position:absolute; top:0; left:0; bottom:0; width:44px; padding:11px 0;
+    font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.5; color:var(--ink-soft);
+    text-align:right; padding-right:8px; background:#F3E7F8; user-select:none; overflow:hidden;
+    border-right:1px solid var(--line); pointer-events:none; z-index:0;
+  }
+
   .btn{
     border:none; border-radius:12px; padding:11px 16px; font-size:14px; font-weight:600;
     font-family:'Inter',sans-serif; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    transition:transform .12s, opacity .12s, box-shadow .15s;
   }
   .btn-primary{background:linear-gradient(135deg, var(--violet), var(--pink)); color:#fff;}
+  .btn-primary:hover{box-shadow:0 6px 16px -6px rgba(139,92,246,.55);}
   .btn-ghost{background:var(--pink-soft); color:var(--violet-deep);}
   .btn-danger{background:#FDE8ED; color:var(--danger);}
-  .btn:active{transform:scale(.97);}
+  .btn:active{transform:scale(.96);}
   .btn:disabled{opacity:.45; pointer-events:none;}
   .btn-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
 
@@ -90,7 +106,11 @@
   .file-row, .cmd-row{
     display:flex; align-items:center; justify-content:space-between;
     padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;
+    transition:background .15s, transform .12s;
+    border-radius:10px;
   }
+  .file-row:hover, .cmd-row:hover{background:var(--pink-soft);}
+  .file-row:active, .cmd-row:active{transform:scale(.99);}
   .file-row:last-child, .cmd-row:last-child{border-bottom:none;}
   .file-name{display:flex; align-items:center; gap:10px; font-size:14px;}
   .file-icon{
@@ -124,12 +144,15 @@
   .tab{
     flex:1; text-align:center; padding:8px 4px; border-radius:14px; font-size:11px; font-weight:600;
     color:var(--ink-soft); display:flex; flex-direction:column; align-items:center; gap:3px;
+    transition:background .2s, color .2s, transform .12s;
   }
   .tab.active{color:var(--violet-deep); background:var(--pink-soft);}
-  .tab .ic{font-size:18px;}
+  .tab:active{transform:scale(.94);}
+  .tab .ic{font-size:18px; transition:transform .15s;}
+  .tab.active .ic{transform:scale(1.12);}
 
   .view{display:none;}
-  .view.active{display:block;}
+  .view.active{display:block; animation:fadeInUp .25s ease-out both;}
 
   .toast{
     position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
@@ -139,14 +162,15 @@
   .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
 
   .modal-bg{
-    position:fixed; inset:0; background:rgba(36,26,51,.45); display:none; align-items:flex-end; z-index:40;
+    position:fixed; inset:0; background:rgba(36,26,51,0); display:none; align-items:flex-end; z-index:40;
+    transition:background .2s;
   }
-  .modal-bg.show{display:flex;}
+  .modal-bg.show{display:flex; background:rgba(36,26,51,.45);}
   .modal{
     background:#fff; width:100%; border-radius:24px 24px 0 0; padding:18px; max-height:88vh; overflow-y:auto;
-    animation:slideUp .2s ease-out;
+    animation:slideUp .25s cubic-bezier(.2,.8,.2,1);
   }
-  @keyframes slideUp{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  @keyframes slideUp{from{transform:translateY(40px); opacity:0;} to{transform:translateY(0); opacity:1;}}
   .modal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .modal-header h3{font-size:16px; color:var(--ink); text-transform:none; letter-spacing:0;}
   .close-x{font-size:20px; color:var(--ink-soft); cursor:pointer; padding:4px 8px;}
@@ -249,7 +273,10 @@
       <span class="close-x" onclick="closeModal('fileModalBg')">✕</span>
     </div>
     <div class="field">
-      <textarea id="fileEditor" spellcheck="false"></textarea>
+      <div class="editor-wrap">
+        <div class="editor-gutter" id="fileEditorGutter">1</div>
+        <textarea id="fileEditor" spellcheck="false"></textarea>
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="saveFile()">Lưu thay đổi</button>
@@ -275,7 +302,10 @@
     </div>
     <div class="field">
       <label>Code / nội dung lệnh</label>
-      <textarea id="cmdCode" spellcheck="false" style="min-height:180px;"></textarea>
+      <div class="editor-wrap">
+        <div class="editor-gutter" id="cmdCodeGutter">1</div>
+        <textarea id="cmdCode" spellcheck="false" style="min-height:180px;"></textarea>
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="saveCommand()">Lưu lệnh</button>
@@ -319,16 +349,47 @@ function switchTab(name){
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 
+function wireGutter(textareaId, gutterId){
+  const ta = document.getElementById(textareaId);
+  const gutter = document.getElementById(gutterId);
+  if(!ta || !gutter) return;
+  function update(){
+    const n = (ta.value.match(/\n/g)||[]).length + 1;
+    let html = '';
+    for(let i=1;i<=n;i++) html += i + '<br>';
+    gutter.innerHTML = html;
+    gutter.scrollTop = ta.scrollTop;
+  }
+  ta._refreshGutter = update;
+  if(!ta._gutterWired){
+    ta._gutterWired = true;
+    ta.addEventListener('input', update);
+    ta.addEventListener('scroll', ()=>{ gutter.scrollTop = ta.scrollTop; });
+  }
+  update();
+}
+wireGutter('fileEditor', 'fileEditorGutter');
+wireGutter('cmdCode', 'cmdCodeGutter');
+
 async function api(path, options={}){
   if(!state.apiUrl){ toast('Chưa cấu hình API ở mục Cài đặt'); throw new Error('no url'); }
-  const res = await fetch(state.apiUrl.replace(/\/$/,'') + path, {
-    ...options,
-    headers: {
-      'Content-Type':'application/json',
-      'X-API-Key': state.apiKey,
-      ...(options.headers||{})
-    }
-  });
+  let url = state.apiUrl.replace(/\/$/,'');
+  if(location.protocol === 'https:' && url.startsWith('http://')){
+    url = 'https://' + url.slice(7);
+  }
+  let res;
+  try{
+    res = await fetch(url + path, {
+      ...options,
+      headers: {
+        'Content-Type':'application/json',
+        'X-API-Key': state.apiKey,
+        ...(options.headers||{})
+      }
+    });
+  }catch(e){
+    throw new Error('Không kết nối được tới ' + url + ' (kiểm tra CORS / backend đang chạy / http-https)');
+  }
   if(!res.ok){
     const err = await res.json().catch(()=>({detail:'Lỗi không xác định'}));
     throw new Error(err.detail || res.statusText);
@@ -530,6 +591,7 @@ async function openFile(path){
     state.editingFilePath = path;
     document.getElementById('fileModalTitle').textContent = path.split('/').pop();
     document.getElementById('fileEditor').value = data.content;
+    document.getElementById('fileEditor')._refreshGutter && document.getElementById('fileEditor')._refreshGutter();
     openModal('fileModalBg');
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
@@ -575,6 +637,7 @@ function openCmdModal(cmd){
   document.getElementById('cmdName').disabled = !!cmd;
   document.getElementById('cmdDesc').value = cmd ? cmd.description : '';
   document.getElementById('cmdCode').value = cmd ? cmd.code : '';
+  document.getElementById('cmdCode')._refreshGutter && document.getElementById('cmdCode')._refreshGutter();
   document.getElementById('cmdDeleteBtn').style.display = cmd ? 'inline-flex' : 'none';
   openModal('cmdModalBg');
 }
