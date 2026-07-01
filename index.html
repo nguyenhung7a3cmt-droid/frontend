@@ -59,12 +59,12 @@
   }
   .card h3{font-size:14px; color:var(--ink-soft); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:.04em;}
 
-  input[type=text], input[type=password], input[type=search], textarea{
+  input[type=text], input[type=password], input[type=search], textarea, select{
     width:100%; border:1.5px solid var(--line); border-radius:12px;
     padding:11px 12px; font-size:14px; font-family:'Inter',sans-serif;
     background:var(--pink-soft); color:var(--ink); outline:none;
   }
-  input:focus, textarea:focus{border-color:var(--violet);}
+  input:focus, textarea:focus, select:focus{border-color:var(--violet);}
   textarea{font-family:'JetBrains Mono',monospace; font-size:13px; min-height:260px; resize:vertical; line-height:1.5; tab-size:4;}
   label{font-size:12px; color:var(--ink-soft); display:block; margin-bottom:6px; font-weight:500;}
   .field{margin-bottom:12px;}
@@ -247,6 +247,9 @@
   .ctx-item:active{transform:scale(.98);}
   .ctx-item.danger{color:var(--danger);}
   .ctx-sep{height:1px; background:var(--line); margin:5px 8px;}
+
+  .host-row{display:flex; gap:8px; align-items:flex-end;}
+  .host-row .field{flex:1; margin-bottom:0;}
 </style>
 </head>
 <body>
@@ -299,6 +302,14 @@
     <div class="card">
       <h3>Kết nối server</h3>
       <div class="field">
+        <label>Host đang dùng</label>
+        <select id="hostSelect" onchange="switchHost()"></select>
+      </div>
+      <div class="field">
+        <label>Tên host (gợi nhớ, vd: Wispbyte 1)</label>
+        <input type="text" id="hostName" placeholder="vd: Wispbyte 1">
+      </div>
+      <div class="field">
         <label>Địa chỉ API (vd: http://192.168.1.5:8420)</label>
         <input type="text" id="apiUrl" placeholder="http://...">
       </div>
@@ -308,6 +319,8 @@
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="saveSettings()">Lưu & kết nối</button>
+        <button class="btn btn-ghost" onclick="addHost()">+ Thêm host</button>
+        <button class="btn btn-danger" id="btnRemoveHost" onclick="removeHost()">🗑 Xóa host này</button>
       </div>
     </div>
     <div class="card">
@@ -442,8 +455,10 @@
 
 <script>
 let state = {
-  apiUrl: localStorage.getItem('dash_api_url') || '',
-  apiKey: localStorage.getItem('dash_api_key') || '',
+  hosts: [],
+  activeHostId: null,
+  apiUrl: '',
+  apiKey: '',
   currentPath: '',
   editingFilePath: null,
   editingFileOriginal: '',
@@ -455,9 +470,6 @@ let state = {
   renamingPath: null,
   ctxItem: null,
 };
-
-document.getElementById('apiUrl').value = state.apiUrl;
-document.getElementById('apiKey').value = state.apiKey;
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -589,11 +601,112 @@ function triggerDownloadBlob(blob, filename){
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
+// ---------- MULTI-HOST ----------
+function persistHosts(){
+  localStorage.setItem('dash_hosts', JSON.stringify(state.hosts));
+  if(state.activeHostId) localStorage.setItem('dash_active_host', state.activeHostId);
+}
+
+function activeHost(){
+  return state.hosts.find(h=>h.id===state.activeHostId) || null;
+}
+
+function loadHosts(){
+  try{ state.hosts = JSON.parse(localStorage.getItem('dash_hosts') || '[]'); }catch(e){ state.hosts = []; }
+  // migrate du lieu cu (khi chi co 1 host, chua co he thong multi-host)
+  if(state.hosts.length === 0){
+    const oldUrl = localStorage.getItem('dash_api_url');
+    const oldKey = localStorage.getItem('dash_api_key');
+    if(oldUrl){
+      state.hosts.push({id:'h'+Date.now(), name:'Host 1', apiUrl:oldUrl, apiKey:oldKey||''});
+    }
+  }
+  state.activeHostId = localStorage.getItem('dash_active_host') || (state.hosts[0] && state.hosts[0].id) || null;
+  if(!state.hosts.find(h=>h.id===state.activeHostId)){
+    state.activeHostId = state.hosts[0] ? state.hosts[0].id : null;
+  }
+  persistHosts();
+  renderHostSelect();
+  applyActiveHostToFields();
+}
+
+function renderHostSelect(){
+  const sel = document.getElementById('hostSelect');
+  const removeBtn = document.getElementById('btnRemoveHost');
+  if(state.hosts.length === 0){
+    sel.innerHTML = '<option value="">(chưa có host nào)</option>';
+    if(removeBtn) removeBtn.disabled = true;
+    return;
+  }
+  if(removeBtn) removeBtn.disabled = false;
+  sel.innerHTML = state.hosts.map(h=>
+    `<option value="${h.id}" ${h.id===state.activeHostId?'selected':''}>${h.name}</option>`
+  ).join('');
+}
+
+function applyActiveHostToFields(){
+  const h = activeHost();
+  state.apiUrl = h ? h.apiUrl : '';
+  state.apiKey = h ? h.apiKey : '';
+  document.getElementById('hostName').value = h ? h.name : '';
+  document.getElementById('apiUrl').value = state.apiUrl;
+  document.getElementById('apiKey').value = state.apiKey;
+}
+
+function switchHost(){
+  state.activeHostId = document.getElementById('hostSelect').value || null;
+  persistHosts();
+  applyActiveHostToFields();
+  const h = activeHost();
+  toast(h ? 'Đã chuyển sang ' + h.name : 'Chưa có host nào');
+  checkHealth();
+  refreshBotStatus();
+  fetchLogs();
+}
+
+function addHost(){
+  const name = prompt('Tên host mới (vd: Wispbyte 2):', 'Host ' + (state.hosts.length + 1));
+  if(!name) return;
+  const h = {id:'h'+Date.now(), name, apiUrl:'', apiKey:''};
+  state.hosts.push(h);
+  state.activeHostId = h.id;
+  persistHosts();
+  renderHostSelect();
+  applyActiveHostToFields();
+  toast('Đã thêm host, nhập API URL/Key rồi bấm Lưu & kết nối');
+}
+
+function removeHost(){
+  const h = activeHost();
+  if(!h) return;
+  if(!confirm(`Xóa host "${h.name}"? Không ảnh hưởng tới bot, chỉ xóa khỏi danh sách quản lý.`)) return;
+  state.hosts = state.hosts.filter(x=>x.id !== h.id);
+  state.activeHostId = state.hosts[0] ? state.hosts[0].id : null;
+  persistHosts();
+  renderHostSelect();
+  applyActiveHostToFields();
+  checkHealth();
+  refreshBotStatus();
+  fetchLogs();
+  toast('Đã xóa host');
+}
+
 function saveSettings(){
   state.apiUrl = document.getElementById('apiUrl').value.trim();
   state.apiKey = document.getElementById('apiKey').value.trim();
-  localStorage.setItem('dash_api_url', state.apiUrl);
-  localStorage.setItem('dash_api_key', state.apiKey);
+  const name = document.getElementById('hostName').value.trim();
+  let h = activeHost();
+  if(!h){
+    h = {id:'h'+Date.now(), name: name || 'Host ' + (state.hosts.length + 1), apiUrl: state.apiUrl, apiKey: state.apiKey};
+    state.hosts.push(h);
+    state.activeHostId = h.id;
+  } else {
+    h.name = name || h.name;
+    h.apiUrl = state.apiUrl;
+    h.apiKey = state.apiKey;
+  }
+  persistHosts();
+  renderHostSelect();
   toast('Đã lưu, đang kết nối…');
   checkHealth();
   refreshBotStatus();
@@ -969,8 +1082,6 @@ async function createFolder(){
   if(!name) return;
   const path = state.currentPath ? state.currentPath + '/' + name : name;
   try{
-    // NOTE: backend cần có endpoint POST /api/files/mkdir { path }.
-    // Nếu backend hiện tại chưa có endpoint này thì cần bổ sung, đổi tên cho khớp API thực tế.
     await api('/api/files/mkdir', {
       method:'POST',
       body: JSON.stringify({path})
@@ -993,8 +1104,6 @@ async function confirmRename(){
   parts[parts.length - 1] = newName;
   const newPath = parts.join('/');
   try{
-    // NOTE: backend cần có endpoint POST /api/files/rename { old_path, new_path }.
-    // Nếu backend hiện tại chưa có endpoint này thì cần bổ sung, đổi tên cho khớp API thực tế.
     await api('/api/files/rename', {
       method:'POST',
       body: JSON.stringify({old_path: state.renamingPath, new_path: newPath})
@@ -1033,29 +1142,21 @@ async function saveFile(){
 }
 
 // ---------- CONTEXT MENU (right-click / long-press) ----------
-document.getElementById('fileList').addEventListener('contextmenu', function(e){
-  const row = e.target.closest('.file-row');
-  if(!row) return;
+// Gan len ca view-files (khong chi fileList) de bat duoc click vao khoang trong
+// ngoai cac dong file, tranh hien menu chuot phai mac dinh cua trinh duyet.
+document.getElementById('view-files').addEventListener('contextmenu', function(e){
   e.preventDefault();
-  const path = row.getAttribute('data-path');
-  const item = state.lastFileItems.find(it => it.path === path);
-  if(item) showCtxMenu(e, item);
+  const row = e.target.closest('.file-row');
+  if(row){
+    const path = row.getAttribute('data-path');
+    const item = state.lastFileItems.find(it => it.path === path);
+    if(item) showCtxMenu(e, item);
+    return;
+  }
+  showBackgroundCtxMenu(e);
 });
 
-function showCtxMenu(e, item){
-  const menu = document.getElementById('ctxMenu');
-  state.ctxItem = item;
-
-  const openLabel = item.is_dir ? '📂 Mở thư mục' : '📝 Sửa file';
-  menu.innerHTML = `
-    <div class="ctx-item" onclick="ctxAction('open')">${openLabel}</div>
-    <div class="ctx-item" onclick="ctxAction('rename')">✏️ Đổi tên</div>
-    <div class="ctx-item" onclick="ctxAction('download')">⬇ Tải xuống</div>
-    <div class="ctx-item" onclick="ctxAction('select')">☑ Chọn</div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item danger" onclick="ctxAction('delete')">🗑 Xóa</div>
-  `;
-
+function positionCtxMenu(menu, e){
   const x = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
   const y = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
 
@@ -1074,6 +1175,35 @@ function showCtxMenu(e, item){
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
   });
+}
+
+function showCtxMenu(e, item){
+  const menu = document.getElementById('ctxMenu');
+  state.ctxItem = item;
+
+  const openLabel = item.is_dir ? '📂 Mở thư mục' : '📝 Sửa file';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="ctxAction('open')">${openLabel}</div>
+    <div class="ctx-item" onclick="ctxAction('rename')">✏️ Đổi tên</div>
+    <div class="ctx-item" onclick="ctxAction('download')">⬇ Tải xuống</div>
+    <div class="ctx-item" onclick="ctxAction('select')">☑ Chọn</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item danger" onclick="ctxAction('delete')">🗑 Xóa</div>
+  `;
+  positionCtxMenu(menu, e);
+}
+
+function showBackgroundCtxMenu(e){
+  const menu = document.getElementById('ctxMenu');
+  state.ctxItem = null;
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="hideCtxMenu(); triggerUpload();">⬆ Thêm file</div>
+    <div class="ctx-item" onclick="hideCtxMenu(); createBlankFile();">📄 File trống</div>
+    <div class="ctx-item" onclick="hideCtxMenu(); createFolder();">📁 Thư mục mới</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" onclick="hideCtxMenu(); loadFiles(state.currentPath);">🔄 Làm mới</div>
+  `;
+  positionCtxMenu(menu, e);
 }
 
 function hideCtxMenu(){
@@ -1213,6 +1343,7 @@ async function deleteCommand(){
 }
 
 // init: luôn mở tab Cài đặt khi mở web
+loadHosts();
 checkHealth();
 switchTab('settings');
 </script>
