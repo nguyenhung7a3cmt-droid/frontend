@@ -59,13 +59,13 @@
   }
   .card h3{font-size:14px; color:var(--ink-soft); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:.04em;}
 
-  input[type=text], input[type=password], textarea{
+  input[type=text], input[type=password], input[type=search], textarea{
     width:100%; border:1.5px solid var(--line); border-radius:12px;
     padding:11px 12px; font-size:14px; font-family:'Inter',sans-serif;
     background:var(--pink-soft); color:var(--ink); outline:none;
   }
   input:focus, textarea:focus{border-color:var(--violet);}
-  textarea{font-family:'JetBrains Mono',monospace; font-size:13px; min-height:260px; resize:vertical; line-height:1.5;}
+  textarea{font-family:'JetBrains Mono',monospace; font-size:13px; min-height:260px; resize:vertical; line-height:1.5; tab-size:4;}
   label{font-size:12px; color:var(--ink-soft); display:block; margin-bottom:6px; font-weight:500;}
   .field{margin-bottom:12px;}
 
@@ -103,6 +103,11 @@
   .logbox .err{color:#FF9BB0;}
   .logbox .warn{color:#FFD98B;}
   .logbox .ok{color:#9BF6C8;}
+  .logbox mark{background:#8B5CF6; color:#fff; border-radius:3px; padding:0 1px;}
+
+  .log-toolbar{display:flex; gap:8px; margin-bottom:10px; align-items:center;}
+  .log-toolbar input{flex:1;}
+  .autoscroll-toggle{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); flex-shrink:0;}
 
   .file-row, .cmd-row{
     display:flex; align-items:center; justify-content:space-between;
@@ -120,6 +125,13 @@
   }
   .file-meta{font-size:11px; color:var(--ink-soft);}
   .chevron{color:var(--ink-soft); font-size:15px; padding:6px 8px; flex-shrink:0;}
+  .file-actions{display:flex; align-items:center; gap:2px; flex-shrink:0;}
+  .icon-btn{
+    font-size:14px; padding:6px 7px; border-radius:8px; color:var(--ink-soft); cursor:pointer;
+    transition:background .15s;
+  }
+  .icon-btn:hover{background:var(--pink-soft);}
+  .icon-btn:active{transform:scale(.92);}
 
   .file-checkbox{
     width:20px; height:20px; border-radius:6px; border:1.5px solid var(--line); flex-shrink:0;
@@ -142,7 +154,7 @@
   }
   .toggle.on .knob{left:21px;}
 
-  /* FIX: toolbar (nút chọn/thêm file + breadcrumb) dính lại khi cuộn danh sách file dài */
+  /* toolbar (nút chọn/thêm file + search + breadcrumb) dính lại khi cuộn danh sách file dài */
   .file-toolbar-sticky{
     position:sticky; top:0; z-index:5; background:#fff;
     margin:0 -16px; padding:0 16px 10px; border-bottom:1px solid var(--line);
@@ -192,6 +204,7 @@
   .modal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .modal-header h3{font-size:16px; color:var(--ink); text-transform:none; letter-spacing:0;}
   .close-x{font-size:20px; color:var(--ink-soft); cursor:pointer; padding:4px 8px;}
+  .dirty-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--pink); margin-left:6px; vertical-align:middle;}
 
   .selection-bar{
     position:fixed; left:12px; right:12px; bottom:calc(70px + env(safe-area-inset-bottom));
@@ -205,6 +218,35 @@
   .selection-bar .sel-actions{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;}
   .selection-bar .btn{padding:8px 12px; font-size:12.5px; border-radius:10px;}
   .selection-bar .btn-ghost{background:rgba(255,255,255,.12); color:#fff;}
+
+  .small-modal .modal{max-width:420px; margin:0 auto; border-radius:24px;}
+
+  .icon-only{padding:11px 13px; font-size:15px; line-height:1;}
+
+  .search-box{position:relative; margin-bottom:10px;}
+  .search-box input[type=search]{padding-right:42px;}
+  .search-box input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none; appearance:none;}
+  .search-box .search-icon{
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    width:30px; height:30px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    font-size:14px; color:var(--violet-deep); background:transparent; pointer-events:none;
+  }
+
+  .ctx-menu{
+    position:fixed; z-index:60; background:#fff; border-radius:18px; min-width:190px;
+    padding:6px; border:1px solid var(--line);
+    box-shadow:0 16px 36px -12px rgba(36,26,51,.4);
+    display:none; animation:fadeInUp .15s ease-out both;
+  }
+  .ctx-menu.show{display:block;}
+  .ctx-item{
+    display:flex; align-items:center; gap:10px; padding:11px 13px; border-radius:12px;
+    font-size:14px; color:var(--ink); cursor:pointer; transition:background .12s, transform .1s;
+  }
+  .ctx-item:hover{background:var(--pink-soft);}
+  .ctx-item:active{transform:scale(.98);}
+  .ctx-item.danger{color:var(--danger);}
+  .ctx-sep{height:1px; background:var(--line); margin:5px 8px;}
 </style>
 </head>
 <body>
@@ -222,12 +264,19 @@
     <div class="card">
       <h3>Thư mục file</h3>
       <div class="file-toolbar-sticky">
-        <div class="btn-row" style="margin-top:0; margin-bottom:10px;">
-          <button class="btn btn-ghost btn-sm" id="btnSelectMode" onclick="toggleSelectMode()">☑ Chọn</button>
-          <button class="btn btn-ghost btn-sm" onclick="triggerUpload()">⬆ Thêm file</button>
-          <button class="btn btn-ghost btn-sm" onclick="createBlankFile()">📄 File trống</button>
+        <div class="btn-row" style="margin-top:0; margin-bottom:10px; justify-content:space-between; flex-wrap:nowrap;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" id="btnSelectMode" onclick="toggleSelectMode()">☑ Chọn</button>
+            <button class="btn btn-ghost btn-sm" onclick="triggerUpload()">⬆ Thêm file</button>
+            <button class="btn btn-ghost btn-sm" onclick="createBlankFile()">📄 File trống</button>
+            <button class="btn btn-ghost btn-sm" onclick="createFolder()">📁 Thư mục mới</button>
+          </div>
+          <button class="btn btn-ghost btn-sm icon-only" id="btnToggleSearch" onclick="toggleFileSearch()" title="Tìm kiếm file">🔍</button>
         </div>
         <input type="file" id="uploadInput" multiple style="display:none" onchange="handleUploadInput(event)">
+        <div class="search-collapse" id="fileSearchWrap">
+          <input type="search" id="fileSearch" placeholder="🔎 Tìm file trong thư mục này..." oninput="renderFileList()">
+        </div>
         <div class="breadcrumb" id="breadcrumb"></div>
       </div>
       <div id="fileList"><div class="empty">Đang tải…</div></div>
@@ -275,9 +324,17 @@
     </div>
     <div class="card">
       <h3>Log gần nhất</h3>
+      <div class="log-toolbar">
+        <input type="search" id="logSearch" placeholder="🔎 Lọc log (vd: ERROR)..." oninput="renderLogs()">
+        <label class="autoscroll-toggle">
+          <input type="checkbox" id="autoScrollChk" checked style="width:auto;">
+          Auto-scroll
+        </label>
+      </div>
       <div class="logbox" id="logBox">Đang tải log…</div>
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="fetchLogs()">🔄 Tải lại log</button>
+        <button class="btn btn-ghost" onclick="copyLogs()">📋 Copy log</button>
       </div>
     </div>
     <div class="card">
@@ -317,8 +374,8 @@
 <div class="modal-bg" id="fileModalBg">
   <div class="modal">
     <div class="modal-header">
-      <h3 id="fileModalTitle">file.py</h3>
-      <span class="close-x" onclick="closeModal('fileModalBg')">✕</span>
+      <h3 id="fileModalTitle">file.py<span class="dirty-dot" id="fileDirtyDot" style="display:none;"></span></h3>
+      <span class="close-x" onclick="requestCloseFileModal()">✕</span>
     </div>
     <div class="field">
       <div class="editor-wrap">
@@ -328,7 +385,7 @@
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="saveFile()">Lưu thay đổi</button>
-      <button class="btn btn-ghost" onclick="closeModal('fileModalBg')">Hủy</button>
+      <button class="btn btn-ghost" onclick="requestCloseFileModal()">Hủy</button>
     </div>
   </div>
 </div>
@@ -363,16 +420,40 @@
   </div>
 </div>
 
+<!-- Rename modal -->
+<div class="modal-bg small-modal" id="renameModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Đổi tên</h3>
+      <span class="close-x" onclick="closeModal('renameModalBg')">✕</span>
+    </div>
+    <div class="field">
+      <label>Tên mới</label>
+      <input type="text" id="renameInput">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="confirmRename()">Đổi tên</button>
+      <button class="btn btn-ghost" onclick="closeModal('renameModalBg')">Hủy</button>
+    </div>
+  </div>
+</div>
+
+<div class="ctx-menu" id="ctxMenu"></div>
+
 <script>
 let state = {
   apiUrl: localStorage.getItem('dash_api_url') || '',
   apiKey: localStorage.getItem('dash_api_key') || '',
   currentPath: '',
   editingFilePath: null,
+  editingFileOriginal: '',
   editingCmdName: null,
   selectMode: false,
   selectedFiles: new Set(),
   lastFileItems: [],
+  lastLogLines: [],
+  renamingPath: null,
+  ctxItem: null,
 };
 
 document.getElementById('apiUrl').value = state.apiUrl;
@@ -401,6 +482,35 @@ function switchTab(name){
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 
+// Tab key trong textarea chèn tab thay vì đổi focus
+function wireTabKey(textareaId){
+  const ta = document.getElementById(textareaId);
+  if(!ta || ta._tabWired) return;
+  ta._tabWired = true;
+  ta.addEventListener('keydown', function(e){
+    if(e.key === 'Tab'){
+      e.preventDefault();
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      if(e.shiftKey){
+        const before = ta.value.slice(0, start);
+        const lineStart = before.lastIndexOf('\n') + 1;
+        const line = ta.value.slice(lineStart, start);
+        if(/^(\t| {1,2})/.test(line)){
+          const removed = line.match(/^(\t| {1,2})/)[0];
+          ta.value = ta.value.slice(0, lineStart) + line.slice(removed.length) + ta.value.slice(start);
+          ta.selectionStart = ta.selectionEnd = start - removed.length;
+        }
+      } else {
+        ta.value = ta.value.slice(0, start) + '  ' + ta.value.slice(end);
+        ta.selectionStart = ta.selectionEnd = start + 2;
+      }
+      ta.dispatchEvent(new Event('input'));
+    }
+  });
+}
+wireTabKey('fileEditor');
+wireTabKey('cmdCode');
+
 function wireGutter(textareaId, gutterId){
   const ta = document.getElementById(textareaId);
   const gutter = document.getElementById(gutterId);
@@ -423,6 +533,18 @@ function wireGutter(textareaId, gutterId){
 wireGutter('fileEditor', 'fileEditorGutter');
 wireGutter('cmdCode', 'cmdCodeGutter');
 
+// Cảnh báo mất thay đổi chưa lưu khi đóng file editor
+document.getElementById('fileEditor').addEventListener('input', ()=>{
+  const dirty = document.getElementById('fileEditor').value !== state.editingFileOriginal;
+  document.getElementById('fileDirtyDot').style.display = dirty ? 'inline-block' : 'none';
+});
+
+function requestCloseFileModal(){
+  const dirty = document.getElementById('fileEditor').value !== state.editingFileOriginal;
+  if(dirty && !confirm('Có thay đổi chưa lưu. Đóng và bỏ thay đổi?')) return;
+  closeModal('fileModalBg');
+}
+
 function resolveApiBase(){
   let url = state.apiUrl.replace(/\/$/,'');
   if(location.protocol === 'https:' && url.startsWith('http://')){
@@ -437,7 +559,6 @@ async function apiRaw(path, options={}){
   let res;
   try{
     const headers = { 'X-API-Key': state.apiKey, ...(options.headers||{}) };
-    // fetch() tu dat Content-Type dung khi body la FormData, khong override
     if(!(options.body instanceof FormData) && options.body !== undefined){
       headers['Content-Type'] = 'application/json';
     }
@@ -518,6 +639,8 @@ async function refreshBotStatus(){
       if(data.uptime_sec != null) parts.push('⏱ ' + formatUptime(data.uptime_sec));
       if(data.guild_count != null) parts.push('🏠 ' + data.guild_count + ' server');
       if(data.member_count != null) parts.push('👥 ' + data.member_count.toLocaleString('vi-VN') + ' member');
+      if(data.cpu_percent != null) parts.push('🧠 CPU ' + data.cpu_percent.toFixed(0) + '%');
+      if(data.mem_mb != null) parts.push('💾 ' + data.mem_mb.toFixed(0) + ' MB');
       meta.textContent = parts.join('  ·  ');
     } else if(data.fail_count){
       meta.textContent = `Đã crash ${data.fail_count} lần, watchdog sẽ tự thử lại`;
@@ -542,11 +665,38 @@ async function fetchLogs(){
   if(!box) return;
   try{
     const data = await api('/api/logs?tail=150');
-    const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    box.innerHTML = data.lines.map(escapeHtml).map(colorizeLogLine).join('\n') || '(chưa có log)';
-    if(nearBottom) box.scrollTop = box.scrollHeight;
+    state.lastLogLines = data.lines || [];
+    renderLogs();
   }catch(e){
     box.textContent = 'Lỗi tải log: ' + e.message;
+  }
+}
+
+function renderLogs(){
+  const box = document.getElementById('logBox');
+  const q = document.getElementById('logSearch').value.trim().toLowerCase();
+  const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  let lines = state.lastLogLines;
+  if(q) lines = lines.filter(l => l.toLowerCase().includes(q));
+  box.innerHTML = lines.map(escapeHtml).map(l => colorizeLogLine(highlightMatch(l, q))).join('\n') || '(không có dòng log phù hợp)';
+  const autoScroll = document.getElementById('autoScrollChk').checked;
+  if(autoScroll && nearBottom) box.scrollTop = box.scrollHeight;
+}
+
+function highlightMatch(line, q){
+  if(!q) return line;
+  const idx = line.toLowerCase().indexOf(q);
+  if(idx === -1) return line;
+  return line.slice(0,idx) + '<mark>' + line.slice(idx, idx+q.length) + '</mark>' + line.slice(idx+q.length);
+}
+
+async function copyLogs(){
+  const text = state.lastLogLines.join('\n');
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('Đã copy log ✓');
+  }catch(e){
+    toast('Không copy được: ' + e.message);
   }
 }
 
@@ -619,6 +769,22 @@ async function checkHealth(){
 // ---------- FILES ----------
 const FILE_ICONS = {'.py':'🐍','.lua':'🌙','.json':'🧩','.md':'📝','.txt':'📄','.env':'🔐','.yaml':'⚙️','.yml':'⚙️'};
 
+function toggleFileSearch(){
+  const wrap = document.getElementById('fileSearchWrap');
+  const btn = document.getElementById('btnToggleSearch');
+  const input = document.getElementById('fileSearch');
+  const opening = !wrap.classList.contains('open');
+  wrap.classList.toggle('open', opening);
+  btn.classList.toggle('btn-primary', opening);
+  btn.classList.toggle('btn-ghost', !opening);
+  if(opening){
+    setTimeout(()=>input.focus(), 180);
+  } else {
+    input.value = '';
+    renderFileList();
+  }
+}
+
 function renderBreadcrumb(path){
   const bc = document.getElementById('breadcrumb');
   const parts = path ? path.split('/') : [];
@@ -634,6 +800,10 @@ function renderBreadcrumb(path){
 async function loadFiles(path=''){
   state.currentPath = path;
   renderBreadcrumb(path);
+  document.getElementById('fileSearch').value = '';
+  document.getElementById('fileSearchWrap').classList.remove('open');
+  document.getElementById('btnToggleSearch').classList.remove('btn-primary');
+  document.getElementById('btnToggleSearch').classList.add('btn-ghost');
   const list = document.getElementById('fileList');
   list.innerHTML = '<div class="empty">Đang tải…</div>';
   try{
@@ -647,9 +817,11 @@ async function loadFiles(path=''){
 
 function renderFileList(){
   const list = document.getElementById('fileList');
-  const items = state.lastFileItems;
+  const q = (document.getElementById('fileSearch').value || '').trim().toLowerCase();
+  let items = state.lastFileItems;
+  if(q) items = items.filter(it => it.name.toLowerCase().includes(q));
   if(!items || items.length === 0){
-    list.innerHTML = '<div class="empty">Thư mục trống</div>';
+    list.innerHTML = `<div class="empty">${q ? 'Không tìm thấy file phù hợp' : 'Thư mục trống'}</div>`;
     return;
   }
   list.innerHTML = items.map(it=>{
@@ -661,13 +833,15 @@ function renderFileList(){
       : '';
     const openAction = it.is_dir ? `loadFiles('${it.path}')` : `openFile('${it.path}')`;
     const rowClick = state.selectMode ? `toggleFileSelect('${it.path}')` : openAction;
-    return `<div class="file-row" onclick="${rowClick}">
+    return `<div class="file-row" data-path="${it.path}" onclick="${rowClick}">
         <div class="file-name">
           ${checkboxHtml}
           <span class="file-icon">${icon}</span>
           <div style="min-width:0;"><div>${it.name}</div><div class="file-meta">${meta}</div></div>
         </div>
-        <span class="chevron" onclick="event.stopPropagation(); ${openAction}">›</span>
+        <div class="file-actions">
+          <span class="chevron" onclick="event.stopPropagation(); ${openAction}">›</span>
+        </div>
       </div>`;
   }).join('');
 }
@@ -790,11 +964,54 @@ async function createBlankFile(){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
+async function createFolder(){
+  const name = prompt('Tên thư mục mới:');
+  if(!name) return;
+  const path = state.currentPath ? state.currentPath + '/' + name : name;
+  try{
+    // NOTE: backend cần có endpoint POST /api/files/mkdir { path }.
+    // Nếu backend hiện tại chưa có endpoint này thì cần bổ sung, đổi tên cho khớp API thực tế.
+    await api('/api/files/mkdir', {
+      method:'POST',
+      body: JSON.stringify({path})
+    });
+    toast('Đã tạo thư mục ✓');
+    loadFiles(state.currentPath);
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+function openRenameModal(path, currentName){
+  state.renamingPath = path;
+  document.getElementById('renameInput').value = currentName;
+  openModal('renameModalBg');
+}
+
+async function confirmRename(){
+  const newName = document.getElementById('renameInput').value.trim();
+  if(!newName || !state.renamingPath) return;
+  const parts = state.renamingPath.split('/');
+  parts[parts.length - 1] = newName;
+  const newPath = parts.join('/');
+  try{
+    // NOTE: backend cần có endpoint POST /api/files/rename { old_path, new_path }.
+    // Nếu backend hiện tại chưa có endpoint này thì cần bổ sung, đổi tên cho khớp API thực tế.
+    await api('/api/files/rename', {
+      method:'POST',
+      body: JSON.stringify({old_path: state.renamingPath, new_path: newPath})
+    });
+    toast('Đã đổi tên ✓');
+    closeModal('renameModalBg');
+    loadFiles(state.currentPath);
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
 async function openFile(path){
   try{
     const data = await api('/api/files/content?path=' + encodeURIComponent(path));
     state.editingFilePath = path;
-    document.getElementById('fileModalTitle').textContent = path.split('/').pop();
+    state.editingFileOriginal = data.content;
+    document.getElementById('fileModalTitle').firstChild.textContent = path.split('/').pop();
+    document.getElementById('fileDirtyDot').style.display = 'none';
     document.getElementById('fileEditor').value = data.content;
     document.getElementById('fileEditor')._refreshGutter && document.getElementById('fileEditor')._refreshGutter();
     openModal('fileModalBg');
@@ -803,12 +1020,120 @@ async function openFile(path){
 
 async function saveFile(){
   try{
+    const content = document.getElementById('fileEditor').value;
     await api('/api/files/content', {
       method:'PUT',
-      body: JSON.stringify({path: state.editingFilePath, content: document.getElementById('fileEditor').value})
+      body: JSON.stringify({path: state.editingFilePath, content})
     });
+    state.editingFileOriginal = content;
+    document.getElementById('fileDirtyDot').style.display = 'none';
     toast('Đã lưu file ✓');
     closeModal('fileModalBg');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+// ---------- CONTEXT MENU (right-click / long-press) ----------
+document.getElementById('fileList').addEventListener('contextmenu', function(e){
+  const row = e.target.closest('.file-row');
+  if(!row) return;
+  e.preventDefault();
+  const path = row.getAttribute('data-path');
+  const item = state.lastFileItems.find(it => it.path === path);
+  if(item) showCtxMenu(e, item);
+});
+
+function showCtxMenu(e, item){
+  const menu = document.getElementById('ctxMenu');
+  state.ctxItem = item;
+
+  const openLabel = item.is_dir ? '📂 Mở thư mục' : '📝 Sửa file';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="ctxAction('open')">${openLabel}</div>
+    <div class="ctx-item" onclick="ctxAction('rename')">✏️ Đổi tên</div>
+    <div class="ctx-item" onclick="ctxAction('download')">⬇ Tải xuống</div>
+    <div class="ctx-item" onclick="ctxAction('select')">☑ Chọn</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item danger" onclick="ctxAction('delete')">🗑 Xóa</div>
+  `;
+
+  const x = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+  const y = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.classList.add('show');
+
+  // sau khi render mới biet kich thuoc thuc, clamp lai trong man hinh
+  requestAnimationFrame(()=>{
+    const rect = menu.getBoundingClientRect();
+    let left = x, top = y;
+    if(left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+    if(top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
+    if(left < 8) left = 8;
+    if(top < 8) top = 8;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  });
+}
+
+function hideCtxMenu(){
+  document.getElementById('ctxMenu').classList.remove('show');
+}
+
+document.addEventListener('click', hideCtxMenu);
+document.addEventListener('scroll', hideCtxMenu, true);
+window.addEventListener('resize', hideCtxMenu);
+
+async function ctxAction(action){
+  const item = state.ctxItem;
+  hideCtxMenu();
+  if(!item) return;
+
+  if(action === 'open'){
+    if(item.is_dir) loadFiles(item.path); else openFile(item.path);
+  } else if(action === 'rename'){
+    openRenameModal(item.path, item.name);
+  } else if(action === 'download'){
+    downloadSinglePath(item.path, item.name, item.is_dir);
+  } else if(action === 'select'){
+    if(!state.selectMode) toggleSelectMode();
+    if(!state.selectedFiles.has(item.path)) toggleFileSelect(item.path);
+  } else if(action === 'delete'){
+    deleteSinglePath(item.path, item.name);
+  }
+}
+
+async function downloadSinglePath(path, name, isDir){
+  try{
+    if(!isDir){
+      const res = await apiRaw('/api/files/download?path=' + encodeURIComponent(path));
+      const blob = await res.blob();
+      triggerDownloadBlob(blob, name);
+    } else {
+      const res = await apiRaw('/api/files/download-zip', {
+        method:'POST',
+        body: JSON.stringify({paths:[path]})
+      });
+      const blob = await res.blob();
+      triggerDownloadBlob(blob, name + '.zip');
+    }
+    toast('Đã tải xuống ✓');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function deleteSinglePath(path, name){
+  if(!confirm(`Xóa "${name}"? Không thể hoàn tác (trừ file có .bak).`)) return;
+  try{
+    const data = await api('/api/files/delete', {
+      method:'POST',
+      body: JSON.stringify({paths:[path]})
+    });
+    if(data.errors && data.errors.length){
+      toast('Lỗi: ' + data.errors[0].error);
+    } else {
+      toast('Đã xóa ✓');
+    }
+    loadFiles(state.currentPath);
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
