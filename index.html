@@ -185,6 +185,12 @@
         <button class="btn btn-primary" onclick="saveSettings()">Lưu & kết nối</button>
       </div>
     </div>
+    <div class="card">
+      <h3>Server</h3>
+      <div class="btn-row">
+        <button class="btn btn-danger" onclick="restartServer()">🔄 Restart bot</button>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -303,6 +309,15 @@ function saveSettings(){
   toast('Đã lưu, đang kết nối…');
   checkHealth();
   switchTab('files');
+}
+
+async function restartServer(){
+  if(!confirm('Restart bot? Bot sẽ offline vài giây.')) return;
+  try{
+    await api('/api/restart', {method:'POST'});
+    toast('Đang restart, chờ 5-10s...');
+    document.getElementById('statusText').textContent = 'Đang restart...';
+  }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
 async function checkHealth(){
