@@ -90,6 +90,7 @@
   .btn:active{transform:scale(.96);}
   .btn:disabled{opacity:.45; pointer-events:none;}
   .btn-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .btn-sm{padding:8px 12px; font-size:12.5px; border-radius:10px;}
 
   .status-row-card{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);}
   .bot-meta{font-size:12px; color:var(--ink-soft); margin-top:4px;}
@@ -112,13 +113,23 @@
   .file-row:hover, .cmd-row:hover{background:var(--pink-soft);}
   .file-row:active, .cmd-row:active{transform:scale(.99);}
   .file-row:last-child, .cmd-row:last-child{border-bottom:none;}
-  .file-name{display:flex; align-items:center; gap:10px; font-size:14px;}
+  .file-name{display:flex; align-items:center; gap:10px; font-size:14px; min-width:0;}
   .file-icon{
     width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center;
     background:var(--pink-soft); font-size:14px; flex-shrink:0;
   }
   .file-meta{font-size:11px; color:var(--ink-soft);}
-  .chevron{color:var(--ink-soft); font-size:13px;}
+  .chevron{color:var(--ink-soft); font-size:15px; padding:6px 8px; flex-shrink:0;}
+
+  .file-checkbox{
+    width:20px; height:20px; border-radius:6px; border:1.5px solid var(--line); flex-shrink:0;
+    background:#fff; position:relative; transition:background .15s, border-color .15s;
+  }
+  .file-checkbox.checked{background:linear-gradient(135deg, var(--violet), var(--pink)); border-color:var(--violet);}
+  .file-checkbox.checked::after{
+    content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:12px; font-weight:700;
+  }
 
   .toggle{
     width:42px; height:24px; border-radius:99px; background:#E6DCF5; position:relative; cursor:pointer; flex-shrink:0;
@@ -140,6 +151,7 @@
     position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
     display:flex; padding:8px 6px calc(8px + env(safe-area-inset-bottom));
     box-shadow:0 -8px 24px -16px rgba(91,33,182,.3);
+    z-index:30;
   }
   .tab{
     flex:1; text-align:center; padding:8px 4px; border-radius:14px; font-size:11px; font-weight:600;
@@ -174,6 +186,19 @@
   .modal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
   .modal-header h3{font-size:16px; color:var(--ink); text-transform:none; letter-spacing:0;}
   .close-x{font-size:20px; color:var(--ink-soft); cursor:pointer; padding:4px 8px;}
+
+  .selection-bar{
+    position:fixed; left:12px; right:12px; bottom:calc(70px + env(safe-area-inset-bottom));
+    background:var(--ink); color:#fff; border-radius:16px; padding:10px 14px;
+    display:none; align-items:center; justify-content:space-between; gap:10px; z-index:35;
+    box-shadow:0 10px 26px -10px rgba(36,26,51,.55);
+    animation:fadeInUp .2s ease-out both;
+  }
+  .selection-bar.show{display:flex;}
+  .selection-bar .sel-count{font-size:13px; font-weight:600; flex-shrink:0;}
+  .selection-bar .sel-actions{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;}
+  .selection-bar .btn{padding:8px 12px; font-size:12.5px; border-radius:10px;}
+  .selection-bar .btn-ghost{background:rgba(255,255,255,.12); color:#fff;}
 </style>
 </head>
 <body>
@@ -190,6 +215,12 @@
   <div class="view active" id="view-files">
     <div class="card">
       <h3>Thư mục file</h3>
+      <div class="btn-row" style="margin-top:0; margin-bottom:10px;">
+        <button class="btn btn-ghost btn-sm" id="btnSelectMode" onclick="toggleSelectMode()">☑ Chọn</button>
+        <button class="btn btn-ghost btn-sm" onclick="triggerUpload()">⬆ Thêm file</button>
+        <button class="btn btn-ghost btn-sm" onclick="createBlankFile()">📄 File trống</button>
+      </div>
+      <input type="file" id="uploadInput" multiple style="display:none" onchange="handleUploadInput(event)">
       <div class="breadcrumb" id="breadcrumb"></div>
       <div id="fileList"><div class="empty">Đang tải…</div></div>
     </div>
@@ -265,6 +296,15 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="selection-bar" id="selectionBar">
+  <span class="sel-count" id="selCount">0 đã chọn</span>
+  <div class="sel-actions">
+    <button class="btn btn-primary" onclick="downloadSelected()">⬇ Tải xuống</button>
+    <button class="btn btn-danger" onclick="deleteSelected()">🗑 Xóa</button>
+    <button class="btn btn-ghost" onclick="cancelSelection()">Hủy</button>
+  </div>
+</div>
+
 <!-- File editor modal -->
 <div class="modal-bg" id="fileModalBg">
   <div class="modal">
@@ -322,6 +362,9 @@ let state = {
   currentPath: '',
   editingFilePath: null,
   editingCmdName: null,
+  selectMode: false,
+  selectedFiles: new Set(),
+  lastFileItems: [],
 };
 
 document.getElementById('apiUrl').value = state.apiUrl;
@@ -339,6 +382,7 @@ function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   document.querySelector(`.tab[data-view="${name}"]`).classList.add('active');
+  if(name!=='files'){ cancelSelection(); }
   if(name==='files') loadFiles(state.currentPath);
   if(name==='commands') loadCommands();
   if(name==='settings') refreshBotStatus();
@@ -371,30 +415,49 @@ function wireGutter(textareaId, gutterId){
 wireGutter('fileEditor', 'fileEditorGutter');
 wireGutter('cmdCode', 'cmdCodeGutter');
 
-async function api(path, options={}){
-  if(!state.apiUrl){ toast('Chưa cấu hình API ở mục Cài đặt'); throw new Error('no url'); }
+function resolveApiBase(){
   let url = state.apiUrl.replace(/\/$/,'');
   if(location.protocol === 'https:' && url.startsWith('http://')){
     url = 'https://' + url.slice(7);
   }
+  return url;
+}
+
+async function apiRaw(path, options={}){
+  if(!state.apiUrl){ toast('Chưa cấu hình API ở mục Cài đặt'); throw new Error('no url'); }
+  const url = resolveApiBase();
   let res;
   try{
-    res = await fetch(url + path, {
-      ...options,
-      headers: {
-        'Content-Type':'application/json',
-        'X-API-Key': state.apiKey,
-        ...(options.headers||{})
-      }
-    });
+    const headers = { 'X-API-Key': state.apiKey, ...(options.headers||{}) };
+    // fetch() tu dat Content-Type dung khi body la FormData, khong override
+    if(!(options.body instanceof FormData) && options.body !== undefined){
+      headers['Content-Type'] = 'application/json';
+    }
+    res = await fetch(url + path, { ...options, headers });
   }catch(e){
     throw new Error('Không kết nối được tới ' + url + ' (kiểm tra CORS / backend đang chạy / http-https)');
   }
   if(!res.ok){
-    const err = await res.json().catch(()=>({detail:'Lỗi không xác định'}));
+    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
     throw new Error(err.detail || res.statusText);
   }
+  return res;
+}
+
+async function api(path, options={}){
+  const res = await apiRaw(path, options);
   return res.json();
+}
+
+function triggerDownloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
 function saveSettings(){
@@ -566,23 +629,156 @@ async function loadFiles(path=''){
   list.innerHTML = '<div class="empty">Đang tải…</div>';
   try{
     const data = await api('/api/files?path=' + encodeURIComponent(path));
-    if(data.items.length === 0){
-      list.innerHTML = '<div class="empty">Thư mục trống</div>';
-      return;
-    }
-    list.innerHTML = data.items.map(it=>{
-      const icon = it.is_dir ? '📁' : (FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || '📄');
-      const meta = it.is_dir ? 'thư mục' : `${(it.size/1024).toFixed(1)} KB`;
-      return `<div class="file-row" onclick="${it.is_dir ? `loadFiles('${it.path}')` : `openFile('${it.path}')`}">
-        <div class="file-name"><span class="file-icon">${icon}</span>
-          <div><div>${it.name}</div><div class="file-meta">${meta}</div></div>
-        </div>
-        <span class="chevron">›</span>
-      </div>`;
-    }).join('');
+    state.lastFileItems = data.items;
+    renderFileList();
   }catch(e){
     list.innerHTML = `<div class="empty">Lỗi: ${e.message}</div>`;
   }
+}
+
+function renderFileList(){
+  const list = document.getElementById('fileList');
+  const items = state.lastFileItems;
+  if(!items || items.length === 0){
+    list.innerHTML = '<div class="empty">Thư mục trống</div>';
+    return;
+  }
+  list.innerHTML = items.map(it=>{
+    const icon = it.is_dir ? '📁' : (FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || '📄');
+    const meta = it.is_dir ? 'thư mục' : `${(it.size/1024).toFixed(1)} KB`;
+    const checked = state.selectedFiles.has(it.path);
+    const checkboxHtml = state.selectMode
+      ? `<div class="file-checkbox ${checked?'checked':''}"></div>`
+      : '';
+    const openAction = it.is_dir ? `loadFiles('${it.path}')` : `openFile('${it.path}')`;
+    const rowClick = state.selectMode ? `toggleFileSelect('${it.path}')` : openAction;
+    return `<div class="file-row" onclick="${rowClick}">
+        <div class="file-name">
+          ${checkboxHtml}
+          <span class="file-icon">${icon}</span>
+          <div style="min-width:0;"><div>${it.name}</div><div class="file-meta">${meta}</div></div>
+        </div>
+        <span class="chevron" onclick="event.stopPropagation(); ${openAction}">›</span>
+      </div>`;
+  }).join('');
+}
+
+function updateSelectionBar(){
+  const bar = document.getElementById('selectionBar');
+  const count = state.selectedFiles.size;
+  document.getElementById('selCount').textContent = count + ' đã chọn';
+  bar.classList.toggle('show', count > 0);
+}
+
+function toggleSelectMode(){
+  state.selectMode = !state.selectMode;
+  const btn = document.getElementById('btnSelectMode');
+  btn.textContent = state.selectMode ? '✕ Thoát chọn' : '☑ Chọn';
+  btn.classList.toggle('btn-primary', state.selectMode);
+  btn.classList.toggle('btn-ghost', !state.selectMode);
+  if(!state.selectMode){
+    state.selectedFiles.clear();
+    updateSelectionBar();
+  }
+  renderFileList();
+}
+
+function toggleFileSelect(path){
+  if(state.selectedFiles.has(path)) state.selectedFiles.delete(path);
+  else state.selectedFiles.add(path);
+  updateSelectionBar();
+  renderFileList();
+}
+
+function cancelSelection(){
+  state.selectMode = false;
+  state.selectedFiles.clear();
+  const btn = document.getElementById('btnSelectMode');
+  if(btn){
+    btn.textContent = '☑ Chọn';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-ghost');
+  }
+  updateSelectionBar();
+  renderFileList();
+}
+
+async function downloadSelected(){
+  if(state.selectedFiles.size === 0) return;
+  const paths = [...state.selectedFiles];
+  try{
+    if(paths.length === 1){
+      const res = await apiRaw('/api/files/download?path=' + encodeURIComponent(paths[0]));
+      const blob = await res.blob();
+      triggerDownloadBlob(blob, paths[0].split('/').pop());
+    } else {
+      const res = await apiRaw('/api/files/download-zip', {
+        method:'POST',
+        body: JSON.stringify({paths})
+      });
+      const blob = await res.blob();
+      triggerDownloadBlob(blob, 'files.zip');
+    }
+    toast('Đã tải xuống ✓');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function deleteSelected(){
+  if(state.selectedFiles.size === 0) return;
+  const paths = [...state.selectedFiles];
+  if(!confirm(`Xóa ${paths.length} mục đã chọn? Không thể hoàn tác (trừ file có .bak).`)) return;
+  try{
+    const data = await api('/api/files/delete', {
+      method:'POST',
+      body: JSON.stringify({paths})
+    });
+    if(data.errors && data.errors.length){
+      toast(`Xóa ${data.deleted.length}, lỗi ${data.errors.length} mục`);
+    } else {
+      toast('Đã xóa ✓');
+    }
+    cancelSelection();
+    loadFiles(state.currentPath);
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+function triggerUpload(){
+  document.getElementById('uploadInput').click();
+}
+
+async function handleUploadInput(ev){
+  const files = [...ev.target.files];
+  ev.target.value = '';
+  if(files.length === 0) return;
+  let ok = 0, fail = 0;
+  for(const f of files){
+    try{
+      const fd = new FormData();
+      fd.append('path', state.currentPath);
+      fd.append('file', f);
+      await api('/api/files/upload', {method:'POST', body: fd});
+      ok++;
+    }catch(e){
+      fail++;
+      toast(`Lỗi upload ${f.name}: ${e.message}`);
+    }
+  }
+  if(ok) toast(`Đã thêm ${ok} file ✓` + (fail?` (${fail} lỗi)`:''));
+  loadFiles(state.currentPath);
+}
+
+async function createBlankFile(){
+  const name = prompt('Tên file mới (vd: notes.txt):');
+  if(!name) return;
+  const path = state.currentPath ? state.currentPath + '/' + name : name;
+  try{
+    await api('/api/files/content', {
+      method:'PUT',
+      body: JSON.stringify({path, content:''})
+    });
+    toast('Đã tạo file ✓');
+    loadFiles(state.currentPath);
+  }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
 async function openFile(path){
