@@ -72,7 +72,20 @@
   .btn-ghost{background:var(--pink-soft); color:var(--violet-deep);}
   .btn-danger{background:#FDE8ED; color:var(--danger);}
   .btn:active{transform:scale(.97);}
+  .btn:disabled{opacity:.45; pointer-events:none;}
   .btn-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+
+  .status-row-card{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);}
+  .bot-meta{font-size:12px; color:var(--ink-soft); margin-top:4px;}
+
+  .logbox{
+    background:#1D1530; color:#DCD3EE; font-family:'JetBrains Mono',monospace; font-size:11.5px;
+    line-height:1.5; border-radius:12px; padding:12px; max-height:280px; overflow-y:auto;
+    white-space:pre-wrap; word-break:break-all;
+  }
+  .logbox .err{color:#FF9BB0;}
+  .logbox .warn{color:#FFD98B;}
+  .logbox .ok{color:#9BF6C8;}
 
   .file-row, .cmd-row{
     display:flex; align-items:center; justify-content:space-between;
@@ -186,9 +199,28 @@
       </div>
     </div>
     <div class="card">
+      <h3>Bot Discord</h3>
+      <div class="status-row-card" style="margin-bottom:4px;">
+        <span class="dot" id="botDot"></span><span id="botStatusText">Đang kiểm tra bot…</span>
+      </div>
+      <div class="bot-meta" id="botMeta"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnStart" onclick="startBot()">▶ Start bot</button>
+        <button class="btn btn-danger" id="btnStop" onclick="stopBot()">⏹ Stop bot</button>
+        <button class="btn btn-ghost" id="btnRestartBot" onclick="restartBot()">🔁 Restart bot</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Log gần nhất</h3>
+      <div class="logbox" id="logBox">Đang tải log…</div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="fetchLogs()">🔄 Tải lại log</button>
+      </div>
+    </div>
+    <div class="card">
       <h3>Server</h3>
       <div class="btn-row">
-        <button class="btn btn-danger" onclick="restartServer()">🔄 Restart bot</button>
+        <button class="btn btn-ghost" onclick="restartServer()">🔄 Restart toàn bộ server</button>
       </div>
     </div>
   </div>
@@ -279,6 +311,9 @@ function switchTab(name){
   document.querySelector(`.tab[data-view="${name}"]`).classList.add('active');
   if(name==='files') loadFiles(state.currentPath);
   if(name==='commands') loadCommands();
+  if(name==='settings') refreshBotStatus();
+  stopBotStatusPolling();
+  if(name==='settings') startBotStatusPolling();
 }
 
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
@@ -312,12 +347,127 @@ function saveSettings(){
 }
 
 async function restartServer(){
-  if(!confirm('Restart bot? Bot sẽ offline vài giây.')) return;
+  if(!confirm('Restart toàn bộ server? Cả dashboard lẫn bot sẽ offline vài giây.')) return;
   try{
     await api('/api/restart', {method:'POST'});
     toast('Đang restart, chờ 5-10s...');
     document.getElementById('statusText').textContent = 'Đang restart...';
   }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+// ---------- BOT START/STOP ----------
+let _botPollTimer = null;
+const BOT_STATUS_MAP = {
+  running:  {label:'🟢 Bot đang chạy',      off:false},
+  starting: {label:'🟡 Đang khởi động...',   off:false},
+  stopping: {label:'🟡 Đang dừng...',        off:true},
+  stopped:  {label:'⚪ Bot đã dừng',          off:true},
+  error:    {label:'🔴 Lỗi',                 off:true},
+};
+
+async function refreshBotStatus(){
+  const dot = document.getElementById('botDot');
+  const text = document.getElementById('botStatusText');
+  const meta = document.getElementById('botMeta');
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  if(!dot) return;
+  try{
+    const data = await api('/api/bot/status');
+    const info = BOT_STATUS_MAP[data.status] || {label:data.status, off:true};
+    text.textContent = info.label + (data.error ? (' — ' + data.error) : '');
+    dot.classList.toggle('off', info.off);
+    btnStart.disabled = (data.status === 'running' || data.status === 'starting');
+    btnStop.disabled  = (data.status === 'stopped' || data.status === 'stopping');
+
+    if(data.status === 'running'){
+      const parts = [];
+      if(data.uptime_sec != null) parts.push('⏱ ' + formatUptime(data.uptime_sec));
+      if(data.guild_count != null) parts.push('🏠 ' + data.guild_count + ' server');
+      if(data.member_count != null) parts.push('👥 ' + data.member_count.toLocaleString('vi-VN') + ' member');
+      meta.textContent = parts.join('  ·  ');
+    } else if(data.fail_count){
+      meta.textContent = `Đã crash ${data.fail_count} lần, watchdog sẽ tự thử lại`;
+    } else {
+      meta.textContent = '';
+    }
+  }catch(e){
+    text.textContent = 'Không lấy được trạng thái bot';
+    dot.classList.add('off');
+  }
+}
+
+function formatUptime(sec){
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  if(h > 0) return `${h}h${String(m).padStart(2,'0')}p`;
+  if(m > 0) return `${m}p${String(s).padStart(2,'0')}s`;
+  return `${s}s`;
+}
+
+async function fetchLogs(){
+  const box = document.getElementById('logBox');
+  if(!box) return;
+  try{
+    const data = await api('/api/logs?tail=150');
+    const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.innerHTML = data.lines.map(escapeHtml).map(colorizeLogLine).join('\n') || '(chưa có log)';
+    if(nearBottom) box.scrollTop = box.scrollHeight;
+  }catch(e){
+    box.textContent = 'Lỗi tải log: ' + e.message;
+  }
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function colorizeLogLine(line){
+  if(/ERROR/i.test(line)) return `<span class="err">${line}</span>`;
+  if(/WARN/i.test(line)) return `<span class="warn">${line}</span>`;
+  if(/\bOK\b/.test(line)) return `<span class="ok">${line}</span>`;
+  return line;
+}
+
+function startBotStatusPolling(){
+  refreshBotStatus();
+  fetchLogs();
+  _botPollTimer = setInterval(()=>{ refreshBotStatus(); fetchLogs(); }, 4000);
+}
+
+function stopBotStatusPolling(){
+  if(_botPollTimer){ clearInterval(_botPollTimer); _botPollTimer = null; }
+}
+
+async function startBot(){
+  try{
+    await api('/api/bot/start', {method:'POST'});
+    toast('Đang khởi động bot...');
+    setTimeout(refreshBotStatus, 1500);
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function stopBot(){
+  if(!confirm('Dừng bot? Bot sẽ offline trên Discord tới khi bấm Start lại.')) return;
+  try{
+    await api('/api/bot/stop', {method:'POST'});
+    toast('Đang dừng bot...');
+    setTimeout(refreshBotStatus, 1500);
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function restartBot(){
+  if(!confirm('Restart bot? Bot sẽ offline vài giây rồi tự kết nối lại.')) return;
+  const btn = document.getElementById('btnRestartBot');
+  btn.disabled = true;
+  try{
+    await api('/api/bot/restart', {method:'POST'});
+    toast('Đang restart bot...');
+    setTimeout(refreshBotStatus, 2000);
+  }catch(e){
+    toast('Lỗi: ' + e.message);
+  }finally{
+    btn.disabled = false;
+  }
 }
 
 async function checkHealth(){
