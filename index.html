@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Bot Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --violet-deep:#5B21B6;
+    --violet:#8B5CF6;
+    --pink:#F0A8D8;
+    --pink-soft:#FBEAF6;
+    --bg:#FFFFFF;
+    --ink:#241A33;
+    --ink-soft:#7C6F94;
+    --line:#EDE3F7;
+    --danger:#E2557A;
+    --radius:18px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; font-family:'Inter',sans-serif; color:var(--ink);
+    background:
+      radial-gradient(circle at 15% 0%, #EBDFFC 0%, transparent 45%),
+      radial-gradient(circle at 100% 20%, #FCE4F3 0%, transparent 50%),
+      var(--bg);
+    min-height:100vh;
+    padding-bottom:84px;
+  }
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif; margin:0;}
+  .topbar{
+    padding:22px 18px 18px;
+    background:linear-gradient(135deg, var(--violet-deep), var(--violet) 55%, var(--pink) 110%);
+    border-radius:0 0 28px 28px;
+    color:#fff;
+    box-shadow:0 12px 30px -16px rgba(91,33,182,.55);
+  }
+  .topbar .eyebrow{font-size:12px; letter-spacing:.08em; opacity:.85; text-transform:uppercase;}
+  .topbar h1{font-size:22px; margin-top:4px;}
+  .status-row{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; opacity:.9;}
+  .dot{width:8px;height:8px;border-radius:50%; background:#9BF6C8;}
+  .dot.off{background:#FFB4B4;}
+
+  .container{padding:16px;}
+  .card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 6px 18px -14px rgba(91,33,182,.35);
+  }
+  .card h3{font-size:14px; color:var(--ink-soft); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:.04em;}
+
+  input[type=text], input[type=password], textarea{
+    width:100%; border:1.5px solid var(--line); border-radius:12px;
+    padding:11px 12px; font-size:14px; font-family:'Inter',sans-serif;
+    background:var(--pink-soft); color:var(--ink); outline:none;
+  }
+  input:focus, textarea:focus{border-color:var(--violet);}
+  textarea{font-family:'JetBrains Mono',monospace; font-size:13px; min-height:260px; resize:vertical; line-height:1.5;}
+  label{font-size:12px; color:var(--ink-soft); display:block; margin-bottom:6px; font-weight:500;}
+  .field{margin-bottom:12px;}
+
+  .btn{
+    border:none; border-radius:12px; padding:11px 16px; font-size:14px; font-weight:600;
+    font-family:'Inter',sans-serif; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn-primary{background:linear-gradient(135deg, var(--violet), var(--pink)); color:#fff;}
+  .btn-ghost{background:var(--pink-soft); color:var(--violet-deep);}
+  .btn-danger{background:#FDE8ED; color:var(--danger);}
+  .btn:active{transform:scale(.97);}
+  .btn-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+
+  .file-row, .cmd-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .file-row:last-child, .cmd-row:last-child{border-bottom:none;}
+  .file-name{display:flex; align-items:center; gap:10px; font-size:14px;}
+  .file-icon{
+    width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+    background:var(--pink-soft); font-size:14px; flex-shrink:0;
+  }
+  .file-meta{font-size:11px; color:var(--ink-soft);}
+  .chevron{color:var(--ink-soft); font-size:13px;}
+
+  .toggle{
+    width:42px; height:24px; border-radius:99px; background:#E6DCF5; position:relative; cursor:pointer; flex-shrink:0;
+    transition:background .15s;
+  }
+  .toggle.on{background:linear-gradient(135deg, var(--violet), var(--pink));}
+  .toggle .knob{
+    position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff;
+    transition:left .15s; box-shadow:0 1px 4px rgba(0,0,0,.2);
+  }
+  .toggle.on .knob{left:21px;}
+
+  .breadcrumb{font-size:12px; color:var(--ink-soft); margin-bottom:10px; display:flex; gap:4px; flex-wrap:wrap;}
+  .breadcrumb span{cursor:pointer; color:var(--violet);}
+
+  .empty{text-align:center; padding:30px 10px; color:var(--ink-soft); font-size:13px;}
+
+  .tabbar{
+    position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
+    display:flex; padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 24px -16px rgba(91,33,182,.3);
+  }
+  .tab{
+    flex:1; text-align:center; padding:8px 4px; border-radius:14px; font-size:11px; font-weight:600;
+    color:var(--ink-soft); display:flex; flex-direction:column; align-items:center; gap:3px;
+  }
+  .tab.active{color:var(--violet-deep); background:var(--pink-soft);}
+  .tab .ic{font-size:18px;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:10px 18px; border-radius:99px; font-size:13px;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:50;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(36,26,51,.45); display:none; align-items:flex-end; z-index:40;
+  }
+  .modal-bg.show{display:flex;}
+  .modal{
+    background:#fff; width:100%; border-radius:24px 24px 0 0; padding:18px; max-height:88vh; overflow-y:auto;
+    animation:slideUp .2s ease-out;
+  }
+  @keyframes slideUp{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .modal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .modal-header h3{font-size:16px; color:var(--ink); text-transform:none; letter-spacing:0;}
+  .close-x{font-size:20px; color:var(--ink-soft); cursor:pointer; padding:4px 8px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="eyebrow">Bot Dashboard</div>
+  <h1 id="botTitle">Quản lý bot</h1>
+  <div class="status-row"><span class="dot" id="statusDot"></span><span id="statusText">Đang kiểm tra kết nối…</span></div>
+</div>
+
+<div class="container">
+
+  <!-- FILES VIEW -->
+  <div class="view active" id="view-files">
+    <div class="card">
+      <h3>Thư mục file</h3>
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div id="fileList"><div class="empty">Đang tải…</div></div>
+    </div>
+  </div>
+
+  <!-- COMMANDS VIEW -->
+  <div class="view" id="view-commands">
+    <div class="card">
+      <h3>Lệnh bot</h3>
+      <div id="cmdList"><div class="empty">Đang tải…</div></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="openCmdModal(null)">+ Thêm lệnh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <div class="view" id="view-settings">
+    <div class="card">
+      <h3>Kết nối server</h3>
+      <div class="field">
+        <label>Địa chỉ API (vd: http://192.168.1.5:8420)</label>
+        <input type="text" id="apiUrl" placeholder="http://...">
+      </div>
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="API key">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveSettings()">Lưu & kết nối</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="tabbar">
+  <div class="tab active" data-view="files" onclick="switchTab('files')">
+    <span class="ic">📁</span>Files
+  </div>
+  <div class="tab" data-view="commands" onclick="switchTab('commands')">
+    <span class="ic">⚡</span>Lệnh
+  </div>
+  <div class="tab" data-view="settings" onclick="switchTab('settings')">
+    <span class="ic">⚙️</span>Cài đặt
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- File editor modal -->
+<div class="modal-bg" id="fileModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="fileModalTitle">file.py</h3>
+      <span class="close-x" onclick="closeModal('fileModalBg')">✕</span>
+    </div>
+    <div class="field">
+      <textarea id="fileEditor" spellcheck="false"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="saveFile()">Lưu thay đổi</button>
+      <button class="btn btn-ghost" onclick="closeModal('fileModalBg')">Hủy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Command editor modal -->
+<div class="modal-bg" id="cmdModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="cmdModalTitle">Lệnh mới</h3>
+      <span class="close-x" onclick="closeModal('cmdModalBg')">✕</span>
+    </div>
+    <div class="field">
+      <label>Tên lệnh</label>
+      <input type="text" id="cmdName" placeholder="vd: ping">
+    </div>
+    <div class="field">
+      <label>Mô tả</label>
+      <input type="text" id="cmdDesc" placeholder="Mô tả ngắn gọn">
+    </div>
+    <div class="field">
+      <label>Code / nội dung lệnh</label>
+      <textarea id="cmdCode" spellcheck="false" style="min-height:180px;"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="saveCommand()">Lưu lệnh</button>
+      <button class="btn btn-danger" id="cmdDeleteBtn" onclick="deleteCommand()" style="display:none;">Xóa</button>
+      <button class="btn btn-ghost" onclick="closeModal('cmdModalBg')">Hủy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let state = {
+  apiUrl: localStorage.getItem('dash_api_url') || '',
+  apiKey: localStorage.getItem('dash_api_key') || '',
+  currentPath: '',
+  editingFilePath: null,
+  editingCmdName: null,
+};
+
+document.getElementById('apiUrl').value = state.apiUrl;
+document.getElementById('apiKey').value = state.apiKey;
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+function switchTab(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelector(`.tab[data-view="${name}"]`).classList.add('active');
+  if(name==='files') loadFiles(state.currentPath);
+  if(name==='commands') loadCommands();
+}
+
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+
+async function api(path, options={}){
+  if(!state.apiUrl){ toast('Chưa cấu hình API ở mục Cài đặt'); throw new Error('no url'); }
+  const res = await fetch(state.apiUrl.replace(/\/$/,'') + path, {
+    ...options,
+    headers: {
+      'Content-Type':'application/json',
+      'X-API-Key': state.apiKey,
+      ...(options.headers||{})
+    }
+  });
+  if(!res.ok){
+    const err = await res.json().catch(()=>({detail:'Lỗi không xác định'}));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+function saveSettings(){
+  state.apiUrl = document.getElementById('apiUrl').value.trim();
+  state.apiKey = document.getElementById('apiKey').value.trim();
+  localStorage.setItem('dash_api_url', state.apiUrl);
+  localStorage.setItem('dash_api_key', state.apiKey);
+  toast('Đã lưu, đang kết nối…');
+  checkHealth();
+  switchTab('files');
+}
+
+async function checkHealth(){
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  try{
+    await api('/api/health');
+    dot.classList.remove('off');
+    text.textContent = 'Đã kết nối';
+  }catch(e){
+    dot.classList.add('off');
+    text.textContent = state.apiUrl ? 'Không kết nối được' : 'Chưa cấu hình server';
+  }
+}
+
+// ---------- FILES ----------
+const FILE_ICONS = {'.py':'🐍','.lua':'🌙','.json':'🧩','.md':'📝','.txt':'📄','.env':'🔐','.yaml':'⚙️','.yml':'⚙️'};
+
+function renderBreadcrumb(path){
+  const bc = document.getElementById('breadcrumb');
+  const parts = path ? path.split('/') : [];
+  let html = `<span onclick="loadFiles('')">root</span>`;
+  let acc = '';
+  parts.forEach(p=>{
+    acc += (acc?'/':'') + p;
+    html += ` / <span onclick="loadFiles('${acc}')">${p}</span>`;
+  });
+  bc.innerHTML = html;
+}
+
+async function loadFiles(path=''){
+  state.currentPath = path;
+  renderBreadcrumb(path);
+  const list = document.getElementById('fileList');
+  list.innerHTML = '<div class="empty">Đang tải…</div>';
+  try{
+    const data = await api('/api/files?path=' + encodeURIComponent(path));
+    if(data.items.length === 0){
+      list.innerHTML = '<div class="empty">Thư mục trống</div>';
+      return;
+    }
+    list.innerHTML = data.items.map(it=>{
+      const icon = it.is_dir ? '📁' : (FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || '📄');
+      const meta = it.is_dir ? 'thư mục' : `${(it.size/1024).toFixed(1)} KB`;
+      return `<div class="file-row" onclick="${it.is_dir ? `loadFiles('${it.path}')` : `openFile('${it.path}')`}">
+        <div class="file-name"><span class="file-icon">${icon}</span>
+          <div><div>${it.name}</div><div class="file-meta">${meta}</div></div>
+        </div>
+        <span class="chevron">›</span>
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">Lỗi: ${e.message}</div>`;
+  }
+}
+
+async function openFile(path){
+  try{
+    const data = await api('/api/files/content?path=' + encodeURIComponent(path));
+    state.editingFilePath = path;
+    document.getElementById('fileModalTitle').textContent = path.split('/').pop();
+    document.getElementById('fileEditor').value = data.content;
+    openModal('fileModalBg');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function saveFile(){
+  try{
+    await api('/api/files/content', {
+      method:'PUT',
+      body: JSON.stringify({path: state.editingFilePath, content: document.getElementById('fileEditor').value})
+    });
+    toast('Đã lưu file ✓');
+    closeModal('fileModalBg');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+// ---------- COMMANDS ----------
+async function loadCommands(){
+  const list = document.getElementById('cmdList');
+  list.innerHTML = '<div class="empty">Đang tải…</div>';
+  try{
+    const data = await api('/api/commands');
+    if(data.commands.length === 0){
+      list.innerHTML = '<div class="empty">Chưa có lệnh nào</div>';
+      return;
+    }
+    list.innerHTML = data.commands.map(c=>`
+      <div class="cmd-row">
+        <div class="file-name" onclick='openCmdModal(${JSON.stringify(c).replace(/'/g,"&apos;")})'>
+          <span class="file-icon">⚡</span>
+          <div><div>/${c.name}</div><div class="file-meta">${c.description || 'Không có mô tả'}</div></div>
+        </div>
+        <div class="toggle ${c.enabled?'on':''}" onclick='toggleCommand(event, ${JSON.stringify(c).replace(/'/g,"&apos;")})'><div class="knob"></div></div>
+      </div>`).join('');
+  }catch(e){
+    list.innerHTML = `<div class="empty">Lỗi: ${e.message}</div>`;
+  }
+}
+
+function openCmdModal(cmd){
+  state.editingCmdName = cmd ? cmd.name : null;
+  document.getElementById('cmdModalTitle').textContent = cmd ? '/' + cmd.name : 'Lệnh mới';
+  document.getElementById('cmdName').value = cmd ? cmd.name : '';
+  document.getElementById('cmdName').disabled = !!cmd;
+  document.getElementById('cmdDesc').value = cmd ? cmd.description : '';
+  document.getElementById('cmdCode').value = cmd ? cmd.code : '';
+  document.getElementById('cmdDeleteBtn').style.display = cmd ? 'inline-flex' : 'none';
+  openModal('cmdModalBg');
+}
+
+async function toggleCommand(ev, cmd){
+  ev.stopPropagation();
+  try{
+    await api('/api/commands/' + encodeURIComponent(cmd.name), {
+      method:'PUT',
+      body: JSON.stringify({...cmd, enabled: !cmd.enabled})
+    });
+    loadCommands();
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function saveCommand(){
+  const name = document.getElementById('cmdName').value.trim();
+  if(!name){ toast('Cần nhập tên lệnh'); return; }
+  try{
+    await api('/api/commands/' + encodeURIComponent(name), {
+      method:'PUT',
+      body: JSON.stringify({
+        name,
+        description: document.getElementById('cmdDesc').value.trim(),
+        enabled: true,
+        code: document.getElementById('cmdCode').value
+      })
+    });
+    toast('Đã lưu lệnh ✓');
+    closeModal('cmdModalBg');
+    loadCommands();
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+async function deleteCommand(){
+  if(!state.editingCmdName) return;
+  try{
+    await api('/api/commands/' + encodeURIComponent(state.editingCmdName), {method:'DELETE'});
+    toast('Đã xóa lệnh');
+    closeModal('cmdModalBg');
+    loadCommands();
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+// init
+checkHealth();
+if(state.apiUrl) loadFiles('');
+else switchTab('settings');
+</script>
+</body>
+</html>
