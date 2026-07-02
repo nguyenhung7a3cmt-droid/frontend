@@ -297,17 +297,6 @@
     </div>
   </div>
 
-  <!-- COMMANDS VIEW -->
-  <div class="view" id="view-commands">
-    <div class="card">
-      <h3>Lệnh bot</h3>
-      <div id="cmdList"><div class="empty">Đang tải…</div></div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="openCmdModal(null)">+ Thêm lệnh</button>
-      </div>
-    </div>
-  </div>
-
   <!-- SETTINGS VIEW -->
   <div class="view active" id="view-settings">
     <div class="card">
@@ -381,9 +370,6 @@
   <div class="tab" data-view="files" onclick="switchTab('files')">
     <span class="ic">📁</span>Files
   </div>
-  <div class="tab" data-view="commands" onclick="switchTab('commands')">
-    <span class="ic">⚡</span>Lệnh
-  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -417,36 +403,6 @@
   </div>
 </div>
 
-<!-- Command editor modal -->
-<div class="modal-bg" id="cmdModalBg">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="cmdModalTitle">Lệnh mới</h3>
-      <span class="close-x" onclick="closeModal('cmdModalBg')">✕</span>
-    </div>
-    <div class="field">
-      <label>Tên lệnh</label>
-      <input type="text" id="cmdName" placeholder="vd: ping">
-    </div>
-    <div class="field">
-      <label>Mô tả</label>
-      <input type="text" id="cmdDesc" placeholder="Mô tả ngắn gọn">
-    </div>
-    <div class="field">
-      <label>Code / nội dung lệnh</label>
-      <div class="editor-wrap">
-        <div class="editor-gutter" id="cmdCodeGutter">1</div>
-        <textarea id="cmdCode" spellcheck="false" style="min-height:180px;"></textarea>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" onclick="saveCommand()">Lưu lệnh</button>
-      <button class="btn btn-danger" id="cmdDeleteBtn" onclick="deleteCommand()" style="display:none;">Xóa</button>
-      <button class="btn btn-ghost" onclick="closeModal('cmdModalBg')">Hủy</button>
-    </div>
-  </div>
-</div>
-
 <!-- Rename modal -->
 <div class="modal-bg small-modal" id="renameModalBg">
   <div class="modal">
@@ -476,7 +432,6 @@ let state = {
   currentPath: '',
   editingFilePath: null,
   editingFileOriginal: '',
-  editingCmdName: null,
   selectMode: false,
   selectedFiles: new Set(),
   lastFileItems: [],
@@ -500,7 +455,6 @@ function switchTab(name){
   document.querySelector(`.tab[data-view="${name}"]`).classList.add('active');
   if(name!=='files'){ cancelSelection(); }
   if(name==='files') loadFiles(state.currentPath);
-  if(name==='commands') loadCommands();
   if(name==='settings') refreshBotStatus();
   stopBotStatusPolling();
   if(name==='settings') startBotStatusPolling();
@@ -508,6 +462,15 @@ function switchTab(name){
 
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 function openModal(id){ document.getElementById(id).classList.add('show'); }
+
+// Bam ra ngoai modal (vao phan nen mo) = giong bam nut X
+document.querySelectorAll('.modal-bg').forEach(bg=>{
+  bg.addEventListener('mousedown', function(e){
+    if(e.target !== bg) return; // chi tinh khi bam dung phan nen, khong tinh khi bam trong .modal
+    if(bg.id === 'fileModalBg') requestCloseFileModal();
+    else closeModal(bg.id);
+  });
+});
 
 // Tab key trong textarea chèn tab thay vì đổi focus
 function wireTabKey(textareaId){
@@ -536,7 +499,6 @@ function wireTabKey(textareaId){
   });
 }
 wireTabKey('fileEditor');
-wireTabKey('cmdCode');
 
 function wireGutter(textareaId, gutterId){
   const ta = document.getElementById(textareaId);
@@ -558,7 +520,6 @@ function wireGutter(textareaId, gutterId){
   update();
 }
 wireGutter('fileEditor', 'fileEditorGutter');
-wireGutter('cmdCode', 'cmdCodeGutter');
 
 // Cảnh báo mất thay đổi chưa lưu khi đóng file editor
 document.getElementById('fileEditor').addEventListener('input', ()=>{
@@ -1160,16 +1121,29 @@ async function confirmRename(){
 }
 
 async function openFile(path){
+  // mo modal ngay lap tuc (khong cho fetch xong moi mo) de cam giac nhanh hon,
+  // vua fetch vua hien loading trong textarea.
+  state.editingFilePath = path;
+  state.editingFileOriginal = '';
+  document.getElementById('fileModalTitle').firstChild.textContent = path.split('/').pop();
+  document.getElementById('fileDirtyDot').style.display = 'none';
+  const editor = document.getElementById('fileEditor');
+  editor.value = 'Đang tải…';
+  editor.disabled = true;
+  editor._refreshGutter && editor._refreshGutter();
+  openModal('fileModalBg');
   try{
     const data = await api('/api/files/content?path=' + encodeURIComponent(path));
-    state.editingFilePath = path;
+    if(state.editingFilePath !== path) return; // user da mo file khac trong luc cho
     state.editingFileOriginal = data.content;
-    document.getElementById('fileModalTitle').firstChild.textContent = path.split('/').pop();
-    document.getElementById('fileDirtyDot').style.display = 'none';
-    document.getElementById('fileEditor').value = data.content;
-    document.getElementById('fileEditor')._refreshGutter && document.getElementById('fileEditor')._refreshGutter();
-    openModal('fileModalBg');
-  }catch(e){ toast('Lỗi: ' + e.message); }
+    editor.value = data.content;
+    editor.disabled = false;
+    editor._refreshGutter && editor._refreshGutter();
+  }catch(e){
+    editor.disabled = false;
+    closeModal('fileModalBg');
+    toast('Lỗi: ' + e.message);
+  }
 }
 
 async function saveFile(){
@@ -1315,81 +1289,6 @@ async function deleteSinglePath(path, name){
       toast('Đã xóa ✓');
     }
     loadFiles(state.currentPath);
-  }catch(e){ toast('Lỗi: ' + e.message); }
-}
-
-// ---------- COMMANDS ----------
-async function loadCommands(){
-  const list = document.getElementById('cmdList');
-  list.innerHTML = '<div class="empty">Đang tải…</div>';
-  try{
-    const data = await api('/api/commands');
-    if(data.commands.length === 0){
-      list.innerHTML = '<div class="empty">Chưa có lệnh nào</div>';
-      return;
-    }
-    list.innerHTML = data.commands.map(c=>`
-      <div class="cmd-row">
-        <div class="file-name" onclick='openCmdModal(${JSON.stringify(c).replace(/'/g,"&apos;")})'>
-          <span class="file-icon">⚡</span>
-          <div><div>/${c.name}</div><div class="file-meta">${c.description || 'Không có mô tả'}</div></div>
-        </div>
-        <div class="toggle ${c.enabled?'on':''}" onclick='toggleCommand(event, ${JSON.stringify(c).replace(/'/g,"&apos;")})'><div class="knob"></div></div>
-      </div>`).join('');
-  }catch(e){
-    list.innerHTML = `<div class="empty">Lỗi: ${e.message}</div>`;
-  }
-}
-
-function openCmdModal(cmd){
-  state.editingCmdName = cmd ? cmd.name : null;
-  document.getElementById('cmdModalTitle').textContent = cmd ? '/' + cmd.name : 'Lệnh mới';
-  document.getElementById('cmdName').value = cmd ? cmd.name : '';
-  document.getElementById('cmdName').disabled = !!cmd;
-  document.getElementById('cmdDesc').value = cmd ? cmd.description : '';
-  document.getElementById('cmdCode').value = cmd ? cmd.code : '';
-  document.getElementById('cmdCode')._refreshGutter && document.getElementById('cmdCode')._refreshGutter();
-  document.getElementById('cmdDeleteBtn').style.display = cmd ? 'inline-flex' : 'none';
-  openModal('cmdModalBg');
-}
-
-async function toggleCommand(ev, cmd){
-  ev.stopPropagation();
-  try{
-    await api('/api/commands/' + encodeURIComponent(cmd.name), {
-      method:'PUT',
-      body: JSON.stringify({...cmd, enabled: !cmd.enabled})
-    });
-    loadCommands();
-  }catch(e){ toast('Lỗi: ' + e.message); }
-}
-
-async function saveCommand(){
-  const name = document.getElementById('cmdName').value.trim();
-  if(!name){ toast('Cần nhập tên lệnh'); return; }
-  try{
-    await api('/api/commands/' + encodeURIComponent(name), {
-      method:'PUT',
-      body: JSON.stringify({
-        name,
-        description: document.getElementById('cmdDesc').value.trim(),
-        enabled: true,
-        code: document.getElementById('cmdCode').value
-      })
-    });
-    toast('Đã lưu lệnh ✓');
-    closeModal('cmdModalBg');
-    loadCommands();
-  }catch(e){ toast('Lỗi: ' + e.message); }
-}
-
-async function deleteCommand(){
-  if(!state.editingCmdName) return;
-  try{
-    await api('/api/commands/' + encodeURIComponent(state.editingCmdName), {method:'DELETE'});
-    toast('Đã xóa lệnh');
-    closeModal('cmdModalBg');
-    loadCommands();
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
