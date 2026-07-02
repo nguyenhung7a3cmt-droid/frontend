@@ -347,6 +347,7 @@
             <button class="btn btn-ghost btn-sm" onclick="triggerUpload()">⬆ Thêm file</button>
             <button class="btn btn-ghost btn-sm" onclick="createBlankFile()">📄 File trống</button>
             <button class="btn btn-ghost btn-sm" onclick="createFolder()">📁 Thư mục mới</button>
+            <button class="btn btn-ghost btn-sm" onclick="shareCurrentFolder()">🔗 Share tất cả</button>
           </div>
           <button class="btn btn-ghost btn-sm icon-only" id="btnToggleSearch" onclick="toggleFileSearch()" title="Tìm kiếm file">🔍</button>
         </div>
@@ -467,6 +468,7 @@
   <span class="sel-count" id="selCount">0 đã chọn</span>
   <div class="sel-actions">
     <button class="btn btn-primary" onclick="downloadSelected()">⬇ Tải xuống</button>
+    <button class="btn btn-ghost" onclick="shareSelected()">🔗 Chia sẻ</button>
     <button class="btn btn-danger" onclick="deleteSelected()">🗑 Xóa</button>
     <button class="btn btn-ghost" onclick="cancelSelection()">Hủy</button>
   </div>
@@ -567,7 +569,7 @@ let state = {
   authBlocked: false,
   search: { query: '', matches: [], current: -1 },
   env: { path: '.env', rows: [] }, // rows: [{key, value, visible, id}]
-  sharingPath: null,
+  sharingPaths: null,
 };
 
 function toast(msg){
@@ -1612,28 +1614,38 @@ async function saveFile(){
 // ---------- SHARE LINK ----------
 function openShareModalForEditingFile(){
   if(!state.editingFilePath){ toast('Chưa mở file nào'); return; }
-  openShareModal(state.editingFilePath);
+  openShareModal([state.editingFilePath]);
 }
 
-function openShareModal(path){
-  state.sharingPath = path;
+function shareCurrentFolder(){
+  // '' (root) hoac state.currentPath deu duoc - se share ca thu muc do (de quy)
+  openShareModal([state.currentPath || '']);
+}
+
+function shareSelected(){
+  if(state.selectedFiles.size === 0) return;
+  openShareModal([...state.selectedFiles]);
+}
+
+function openShareModal(paths){
+  state.sharingPaths = paths;
   document.getElementById('shareLinkOutput').value = '';
   openModal('shareModalBg');
   regenShareLink();
 }
 
 async function regenShareLink(){
-  if(!state.sharingPath){ toast('Chưa chọn file để chia sẻ'); return; }
+  if(!state.sharingPaths || state.sharingPaths.length === 0){ toast('Chưa chọn file để chia sẻ'); return; }
   const ttl = parseInt(document.getElementById('shareTtlSelect').value, 10) || 60;
   try{
     const data = await api('/api/files/share', {
-      method:'POST',
-      body: JSON.stringify({path: state.sharingPath, ttl_minutes: ttl})
+      method: 'POST',
+      body: JSON.stringify({paths: state.sharingPaths, ttl_minutes: ttl})
     });
     const base = resolveApiBase();
     const link = base + '/view/' + data.token;
     document.getElementById('shareLinkOutput').value = link;
-    toast('Đã tạo link chia sẻ ✓');
+    toast('Đã tạo link chia sẻ ✓ (' + state.sharingPaths.length + ' mục)');
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
@@ -1741,7 +1753,7 @@ async function ctxAction(action){
   } else if(action === 'download'){
     downloadSinglePath(item.path, item.name, item.is_dir);
   } else if(action === 'share'){
-    openShareModal(item.path);
+    openShareModal([item.path]);
   } else if(action === 'select'){
     if(!state.selectMode) toggleSelectMode();
     if(!state.selectedFiles.has(item.path)) toggleFileSelect(item.path);
