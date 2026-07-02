@@ -1048,7 +1048,7 @@ async function refreshBotStatus(){
     text.textContent = info.label + (data.error ? (' — ' + data.error) : '');
     dot.classList.toggle('off', info.off);
     btnStart.disabled = (data.status === 'running' || data.status === 'starting');
-    btnStop.disabled  = (data.status === 'stopped' || data.status === 'stopping');
+    btnStop.disabled  = (data.status === 'stopped' || data.status === 'stopping' || data.status === 'error');
 
     if(data.status === 'running'){
       const parts = [];
@@ -1187,7 +1187,14 @@ async function stopBot(){
     await api('/api/bot/stop', {method:'POST'});
     toast('Đang dừng bot...');
     setTimeout(refreshBotStatus, 1500);
-  }catch(e){ toast('Lỗi: ' + e.message); }
+  }catch(e){
+    if(e.message === 'Bot chưa chạy' || e.message === 'Không tìm thấy bot đang chạy'){
+      toast('Bot đã ở trạng thái dừng rồi');
+      refreshBotStatus();
+    } else {
+      toast('Lỗi: ' + e.message);
+    }
+  }
 }
 
 async function restartBot(){
