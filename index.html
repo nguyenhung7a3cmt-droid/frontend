@@ -494,6 +494,32 @@
   </div>
 </div>
 
+<!-- Share link modal -->
+<div class="modal-bg small-modal" id="shareModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Link chia sẻ</h3>
+      <span class="close-x" onclick="closeModal('shareModalBg')">✕</span>
+    </div>
+    <div class="field">
+      <label>Ai có link này đều xem được code (không sửa được)</label>
+      <input type="text" id="shareLinkOutput" readonly onclick="this.select()">
+    </div>
+    <div class="field">
+      <label>Hết hạn sau</label>
+      <select id="shareTtlSelect">
+        <option value="60">1 giờ</option>
+        <option value="1440">1 ngày</option>
+        <option value="10080">7 ngày</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="copyShareLink()">📋 Copy link</button>
+      <button class="btn btn-ghost" onclick="regenShareLink()">🔄 Tạo link mới</button>
+    </div>
+  </div>
+</div>
+
 <div class="ctx-menu" id="ctxMenu"></div>
 
 <script>
