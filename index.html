@@ -249,6 +249,17 @@
   .ctx-sep{height:1px; background:var(--line); margin:5px 8px;}
 
   .host-row{display:flex; gap:8px; align-items:flex-end;}
+
+  .pw-wrap{position:relative;}
+  .pw-wrap input{padding-right:42px;}
+  .pw-eye{
+    position:absolute; right:4px; top:50%; transform:translateY(-50%);
+    width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    font-size:16px; cursor:pointer; color:var(--ink-soft); user-select:none; transition:background .15s;
+  }
+  .pw-eye:hover{background:var(--line);}
+  .pw-eye:active{transform:translateY(-50%) scale(.92);}
+  .pw-eye.open{color:var(--violet-deep);}
   .host-row .field{flex:1; margin-bottom:0;}
 </style>
 </head>
@@ -315,7 +326,10 @@
       </div>
       <div class="field">
         <label>API Key</label>
-        <input type="password" id="apiKey" placeholder="API key">
+        <div class="pw-wrap">
+          <input type="password" id="apiKey" placeholder="API key">
+          <span class="pw-eye" id="apiKeyEye" onclick="toggleApiKeyVisibility()">👁</span>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="saveSettings()">Lưu & kết nối</button>
@@ -469,6 +483,7 @@ let state = {
   lastLogLines: [],
   renamingPath: null,
   ctxItem: null,
+  authBlocked: false,
 };
 
 function toast(msg){
@@ -580,7 +595,9 @@ async function apiRaw(path, options={}){
   }
   if(!res.ok){
     const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
-    throw new Error(err.detail || res.statusText);
+    const e = new Error(err.detail || res.statusText);
+    e.status = res.status;
+    throw e;
   }
   return res;
 }
@@ -659,9 +676,9 @@ function switchHost(){
   applyActiveHostToFields();
   const h = activeHost();
   toast(h ? 'Đã chuyển sang ' + h.name : 'Chưa có host nào');
+  state.authBlocked = false;
   checkHealth();
-  refreshBotStatus();
-  fetchLogs();
+  startBotStatusPolling();
 }
 
 function addHost(){
@@ -685,10 +702,19 @@ function removeHost(){
   persistHosts();
   renderHostSelect();
   applyActiveHostToFields();
+  state.authBlocked = false;
   checkHealth();
-  refreshBotStatus();
-  fetchLogs();
+  startBotStatusPolling();
   toast('Đã xóa host');
+}
+
+function toggleApiKeyVisibility(){
+  const input = document.getElementById('apiKey');
+  const eye = document.getElementById('apiKeyEye');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  eye.textContent = showing ? '👁' : '🙈';
+  eye.classList.toggle('open', !showing);
 }
 
 function saveSettings(){
@@ -708,9 +734,9 @@ function saveSettings(){
   persistHosts();
   renderHostSelect();
   toast('Đã lưu, đang kết nối…');
+  state.authBlocked = false;
   checkHealth();
-  refreshBotStatus();
-  fetchLogs();
+  startBotStatusPolling();
 }
 
 async function restartServer(){
@@ -738,7 +764,7 @@ async function refreshBotStatus(){
   const meta = document.getElementById('botMeta');
   const btnStart = document.getElementById('btnStart');
   const btnStop = document.getElementById('btnStop');
-  if(!dot) return;
+  if(!dot || state.authBlocked) return;
   try{
     const data = await api('/api/bot/status');
     const info = BOT_STATUS_MAP[data.status] || {label:data.status, off:true};
@@ -761,9 +787,23 @@ async function refreshBotStatus(){
       meta.textContent = '';
     }
   }catch(e){
+    if(e.status === 401 || e.status === 429){
+      handleAuthBlocked(e.message);
+      return;
+    }
     text.textContent = 'Không lấy được trạng thái bot';
     dot.classList.add('off');
   }
+}
+
+function handleAuthBlocked(msg){
+  state.authBlocked = true;
+  stopBotStatusPolling();
+  const text = document.getElementById('botStatusText');
+  const dot = document.getElementById('botDot');
+  if(text) text.textContent = '🔒 ' + msg;
+  if(dot) dot.classList.add('off');
+  toast('Dừng tự động tải do lỗi API key: ' + msg);
 }
 
 function formatUptime(sec){
@@ -775,12 +815,16 @@ function formatUptime(sec){
 
 async function fetchLogs(){
   const box = document.getElementById('logBox');
-  if(!box) return;
+  if(!box || state.authBlocked) return;
   try{
     const data = await api('/api/logs?tail=150');
     state.lastLogLines = data.lines || [];
     renderLogs();
   }catch(e){
+    if(e.status === 401 || e.status === 429){
+      handleAuthBlocked(e.message);
+      return;
+    }
     box.textContent = 'Lỗi tải log: ' + e.message;
   }
 }
@@ -825,6 +869,7 @@ function colorizeLogLine(line){
 }
 
 function startBotStatusPolling(){
+  stopBotStatusPolling();
   refreshBotStatus();
   fetchLogs();
   _botPollTimer = setInterval(()=>{ refreshBotStatus(); fetchLogs(); }, 4000);
