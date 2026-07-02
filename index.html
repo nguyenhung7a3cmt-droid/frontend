@@ -313,6 +313,17 @@
   .meter-row:last-child{margin-bottom:0;}
   .meter-label{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft);}
   .meter-label b{color:var(--ink); font-weight:600;}
+
+  /* ---- Env (.env) editor ---- */
+  .env-row{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
+  .env-row .env-key{flex:0 0 38%; font-family:'JetBrains Mono',monospace; font-size:12.5px;}
+  .env-row .env-value-wrap{flex:1; position:relative;}
+  .env-row .env-value-wrap input{font-family:'JetBrains Mono',monospace; font-size:12.5px; padding-right:38px;}
+  .env-row .env-eye{width:30px; height:30px; font-size:14px;}
+  .env-row .env-del{flex-shrink:0;}
+  .env-empty{text-align:center; padding:20px 10px; color:var(--ink-soft); font-size:13px;}
+  .env-path-row{display:flex; gap:8px; align-items:flex-end; margin-bottom:14px;}
+  .env-path-row .field{flex:1; margin-bottom:0;}
 </style>
 </head>
 <body>
@@ -388,6 +399,21 @@
         <button class="btn btn-primary" id="btnStart" onclick="startBot()">▶ Start bot</button>
         <button class="btn btn-danger" id="btnStop" onclick="stopBot()">⏹ Stop bot</button>
         <button class="btn btn-ghost" id="btnRestartBot" onclick="restartBot()">🔁 Restart bot</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Environment (.env)</h3>
+      <div class="env-path-row">
+        <div class="field">
+          <label>Đường dẫn file env (theo host đang chọn)</label>
+          <input type="text" id="envPath" value=".env" placeholder=".env">
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadEnv()">🔄 Tải lại</button>
+      </div>
+      <div id="envList"><div class="env-empty">Đang tải…</div></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost btn-sm" onclick="addEnvRow()">+ Thêm biến</button>
+        <button class="btn btn-primary" onclick="saveEnv()">Lưu env</button>
       </div>
     </div>
     <div class="card">
@@ -507,7 +533,7 @@
     </div>
     <div class="field">
       <label>Hết hạn sau</label>
-      <select id="shareTtlSelect" onchange="regenShareLink()">
+      <select id="shareTtlSelect">
         <option value="60">1 giờ</option>
         <option value="1440">1 ngày</option>
         <option value="10080">7 ngày</option>
@@ -539,7 +565,7 @@ let state = {
   ctxItem: null,
   authBlocked: false,
   search: { query: '', matches: [], current: -1 },
-  sharingPath: null,
+  env: { path: '.env', rows: [] }, // rows: [{key, value, visible, id}]
 };
 
 function toast(msg){
@@ -956,6 +982,7 @@ function switchHost(){
   state.authBlocked = false;
   checkHealth();
   startBotStatusPolling();
+  loadEnv();
 }
 
 function addHost(){
@@ -982,6 +1009,7 @@ function removeHost(){
   state.authBlocked = false;
   checkHealth();
   startBotStatusPolling();
+  loadEnv();
   toast('Đã xóa host');
 }
 
@@ -1014,6 +1042,7 @@ function saveSettings(){
   state.authBlocked = false;
   checkHealth();
   startBotStatusPolling();
+  loadEnv();
 }
 
 async function restartServer(){
@@ -1048,7 +1077,7 @@ async function refreshBotStatus(){
     text.textContent = info.label + (data.error ? (' — ' + data.error) : '');
     dot.classList.toggle('off', info.off);
     btnStart.disabled = (data.status === 'running' || data.status === 'starting');
-    btnStop.disabled  = (data.status === 'stopped' || data.status === 'stopping' || data.status === 'error');
+    btnStop.disabled  = (data.status === 'stopped' || data.status === 'stopping');
 
     if(data.status === 'running'){
       const parts = [];
@@ -1187,14 +1216,7 @@ async function stopBot(){
     await api('/api/bot/stop', {method:'POST'});
     toast('Đang dừng bot...');
     setTimeout(refreshBotStatus, 1500);
-  }catch(e){
-    if(e.message === 'Bot chưa chạy' || e.message === 'Không tìm thấy bot đang chạy'){
-      toast('Bot đã ở trạng thái dừng rồi');
-      refreshBotStatus();
-    } else {
-      toast('Lỗi: ' + e.message);
-    }
-  }
+  }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
 async function restartBot(){
@@ -1210,6 +1232,88 @@ async function restartBot(){
   }finally{
     btn.disabled = false;
   }
+}
+
+// ---------- ENV (.env) EDITOR ----------
+let _envRowSeq = 0;
+
+async function loadEnv(){
+  const listEl = document.getElementById('envList');
+  if(!state.apiUrl){ listEl.innerHTML = '<div class="env-empty">Chưa cấu hình server</div>'; return; }
+  const path = document.getElementById('envPath').value.trim() || '.env';
+  state.env.path = path;
+  listEl.innerHTML = '<div class="env-empty">Đang tải…</div>';
+  try{
+    const data = await api('/api/env?path=' + encodeURIComponent(path));
+    state.env.rows = (data.entries || []).map(e => ({key: e.key, value: e.value, visible: false, id: 'e' + (_envRowSeq++)}));
+    if(!data.exists) toast('Chưa có file ' + path + ' — lưu để tạo mới');
+    renderEnvList();
+  }catch(e){
+    if(e.status === 401 || e.status === 429){ handleAuthBlocked(e.message); return; }
+    listEl.innerHTML = `<div class="env-empty">Lỗi: ${e.message}</div>`;
+  }
+}
+
+function renderEnvList(){
+  const listEl = document.getElementById('envList');
+  if(state.env.rows.length === 0){
+    listEl.innerHTML = '<div class="env-empty">Chưa có biến nào. Bấm "+ Thêm biến" để tạo.</div>';
+    return;
+  }
+  listEl.innerHTML = state.env.rows.map(row => `
+    <div class="env-row" data-id="${row.id}">
+      <input type="text" class="env-key" placeholder="TEN_BIEN" value="${escapeHtml(row.key)}"
+             oninput="updateEnvRow('${row.id}', 'key', this.value)">
+      <div class="env-value-wrap">
+        <input type="${row.visible ? 'text' : 'password'}" placeholder="giá trị" value="${escapeHtml(row.value)}"
+               oninput="updateEnvRow('${row.id}', 'value', this.value)">
+        <span class="pw-eye env-eye ${row.visible ? 'open' : ''}" onclick="toggleEnvVisible('${row.id}')">${row.visible ? '🙈' : '👁'}</span>
+      </div>
+      <span class="btn btn-danger btn-sm env-del" onclick="removeEnvRow('${row.id}')">🗑</span>
+    </div>
+  `).join('');
+}
+
+function updateEnvRow(id, field, val){
+  const row = state.env.rows.find(r => r.id === id);
+  if(row) row[field] = val;
+}
+
+function toggleEnvVisible(id){
+  const row = state.env.rows.find(r => r.id === id);
+  if(row) row.visible = !row.visible;
+  renderEnvList();
+}
+
+function addEnvRow(){
+  state.env.rows.push({key: '', value: '', visible: true, id: 'e' + (_envRowSeq++)});
+  renderEnvList();
+  const rows = document.querySelectorAll('.env-row .env-key');
+  if(rows.length) rows[rows.length - 1].focus();
+}
+
+function removeEnvRow(id){
+  state.env.rows = state.env.rows.filter(r => r.id !== id);
+  renderEnvList();
+}
+
+async function saveEnv(){
+  const path = document.getElementById('envPath').value.trim() || '.env';
+  const entries = state.env.rows.map(r => ({key: r.key.trim(), value: r.value}));
+  if(entries.some(e => !e.key)){
+    toast('Có biến chưa đặt tên'); return;
+  }
+  const keys = entries.map(e => e.key);
+  if(new Set(keys).size !== keys.length){
+    toast('Có tên biến bị trùng'); return;
+  }
+  try{
+    await api('/api/env', {
+      method: 'PUT',
+      body: JSON.stringify({path, entries})
+    });
+    toast('Đã lưu env ✓ (restart bot để áp dụng)');
+  }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
 async function checkHealth(){
@@ -1284,7 +1388,7 @@ function renderFileList(){
     return;
   }
   list.innerHTML = items.map(it=>{
-    const icon = it.is_dir ? '📁' : (FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || '📄');
+    const icon = it.is_dir ? '📁' : (FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || (it.name === '.env' ? '🔐' : '📄'));
     const meta = it.is_dir ? 'thư mục' : `${(it.size/1024).toFixed(1)} KB`;
     const checked = state.selectedFiles.has(it.path);
     const checkboxHtml = state.selectMode
@@ -1503,41 +1607,6 @@ async function saveFile(){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
-// ---------- SHARE LINK ----------
-async function openShareModal(path){
-  state.sharingPath = path;
-  document.getElementById('shareLinkOutput').value = 'Đang tạo link...';
-  openModal('shareModalBg');
-  await regenShareLink();
-}
-
-async function regenShareLink(){
-  if(!state.sharingPath) return;
-  const ttl = parseInt(document.getElementById('shareTtlSelect').value, 10) || 60;
-  document.getElementById('shareLinkOutput').value = 'Đang tạo link...';
-  try{
-    const data = await api('/api/files/share', {
-      method:'POST',
-      body: JSON.stringify({path: state.sharingPath, ttl_minutes: ttl})
-    });
-    const base = resolveApiBase();
-    document.getElementById('shareLinkOutput').value = base + '/view/' + data.token;
-    toast('Đã tạo link chia sẻ ✓');
-  }catch(e){
-    document.getElementById('shareLinkOutput').value = '';
-    toast('Lỗi: ' + e.message);
-  }
-}
-
-async function copyShareLink(){
-  const val = document.getElementById('shareLinkOutput').value;
-  if(!val || val.startsWith('Đang tạo')) return;
-  try{
-    await navigator.clipboard.writeText(val);
-    toast('Đã copy link ✓');
-  }catch(e){ toast('Không copy được: ' + e.message); }
-}
-
 // ---------- CONTEXT MENU (right-click / long-press) ----------
 // Gan len ca view-files (khong chi fileList) de bat duoc click vao khoang trong
 // ngoai cac dong file, tranh hien menu chuot phai mac dinh cua trinh duyet.
@@ -1589,7 +1658,6 @@ function showCtxMenu(e, item){
     <div class="ctx-item" onclick="ctxAction('open')">${openLabel}</div>
     <div class="ctx-item" onclick="ctxAction('rename')">✏️ Đổi tên</div>
     <div class="ctx-item" onclick="ctxAction('download')">⬇ Tải xuống</div>
-    ${!item.is_dir ? '<div class="ctx-item" onclick="ctxAction(\'share\')">🔗 Share</div>' : ''}
     <div class="ctx-item" onclick="ctxAction('select')">☑ Chọn</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item danger" onclick="ctxAction('delete')">🗑 Xóa</div>
@@ -1629,8 +1697,6 @@ async function ctxAction(action){
     openRenameModal(item.path, item.name);
   } else if(action === 'download'){
     downloadSinglePath(item.path, item.name, item.is_dir);
-  } else if(action === 'share'){
-    openShareModal(item.path);
   } else if(action === 'select'){
     if(!state.selectMode) toggleSelectMode();
     if(!state.selectedFiles.has(item.path)) toggleFileSelect(item.path);
@@ -1677,6 +1743,7 @@ async function deleteSinglePath(path, name){
 loadHosts();
 checkHealth();
 switchTab('settings');
+loadEnv();
 </script>
 </body>
 </html>
