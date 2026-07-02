@@ -1189,6 +1189,12 @@ async function saveFile(){
 // ---------- CONTEXT MENU (right-click / long-press) ----------
 // Gan len ca view-files (khong chi fileList) de bat duoc click vao khoang trong
 // ngoai cac dong file, tranh hien menu chuot phai mac dinh cua trinh duyet.
+document.addEventListener('contextmenu', function(e){
+  if(e.target.closest('#view-files')) return; // da xu ly rieng o duoi
+  if(e.target.closest('input, textarea')) return; // giu menu goc de Copy/Paste
+  e.preventDefault();
+});
+
 document.getElementById('view-files').addEventListener('contextmenu', function(e){
   e.preventDefault();
   const row = e.target.closest('.file-row');
