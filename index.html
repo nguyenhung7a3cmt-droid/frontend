@@ -260,6 +260,30 @@
   .pw-eye:hover{background:var(--line);}
   .pw-eye:active{transform:translateY(-50%) scale(.92);}
   .pw-eye.open{color:var(--violet-deep);}
+
+  .modal-drag-handle{
+    width:40px; height:5px; border-radius:99px; background:var(--line); margin:0 auto 12px;
+    cursor:ns-resize; touch-action:none; flex-shrink:0;
+  }
+  .modal-drag-handle:active{background:var(--violet);}
+
+  #fileModalBg .modal{
+    display:flex; flex-direction:column; height:70vh; max-height:94vh; min-height:320px;
+  }
+  #fileModalBg .modal-header{flex-shrink:0;}
+  #fileModalBg .field{flex:1; min-height:0; display:flex; flex-direction:column; margin-bottom:8px;}
+  #fileModalBg .editor-wrap{flex:1; min-height:0; display:flex;}
+  #fileModalBg #fileEditor{flex:1; min-height:0; height:100%; resize:none;}
+  #fileModalBg .btn-row{flex-shrink:0;}
+
+  .find-bar{
+    display:none; align-items:center; gap:6px; background:var(--pink-soft); border:1.5px solid var(--line);
+    border-radius:12px; padding:6px 8px; margin-bottom:10px; flex-shrink:0;
+  }
+  .find-bar.show{display:flex;}
+  .find-bar input{flex:1; background:#fff; padding:8px 10px;}
+  .find-bar .find-count{font-size:12px; color:var(--ink-soft); white-space:nowrap; flex-shrink:0; min-width:44px; text-align:center;}
+  .find-bar .icon-btn{flex-shrink:0;}
   .host-row .field{flex:1; margin-bottom:0;}
 </style>
 </head>
@@ -289,7 +313,7 @@
         </div>
         <input type="file" id="uploadInput" multiple style="display:none" onchange="handleUploadInput(event)">
         <div class="search-collapse" id="fileSearchWrap">
-          <input type="search" id="fileSearch" placeholder="🔎 Tìm file trong thư mục này..." oninput="renderFileList()">
+          <input type="search" id="fileSearch" placeholder="🔎 Tìm file / code trong toàn bộ thư mục..." oninput="onFileSearchInput()">
         </div>
         <div class="breadcrumb" id="breadcrumb"></div>
       </div>
@@ -385,10 +409,18 @@
 
 <!-- File editor modal -->
 <div class="modal-bg" id="fileModalBg">
-  <div class="modal">
+  <div class="modal" id="fileModalPanel">
+    <div class="modal-drag-handle" id="fileModalDragHandle" title="Kéo để chỉnh độ cao"></div>
     <div class="modal-header">
       <h3 id="fileModalTitle">file.py<span class="dirty-dot" id="fileDirtyDot" style="display:none;"></span></h3>
       <span class="close-x" onclick="requestCloseFileModal()">✕</span>
+    </div>
+    <div class="find-bar" id="findBar">
+      <input type="text" id="findInput" placeholder="Tìm (dán nhiều dòng cũng được)...">
+      <span class="find-count" id="findCount">0/0</span>
+      <span class="icon-btn" onclick="findPrev()" title="Trước (Shift+Enter)">↑</span>
+      <span class="icon-btn" onclick="findNext()" title="Sau (Enter)">↓</span>
+      <span class="icon-btn" onclick="closeFindBar()" title="Đóng (Esc)">✕</span>
     </div>
     <div class="field">
       <div class="editor-wrap">
@@ -402,6 +434,7 @@
     </div>
   </div>
 </div>
+
 
 <!-- Rename modal -->
 <div class="modal-bg small-modal" id="renameModalBg">
@@ -504,20 +537,30 @@ function wireGutter(textareaId, gutterId){
   const ta = document.getElementById(textareaId);
   const gutter = document.getElementById(gutterId);
   if(!ta || !gutter) return;
-  function update(){
+  let lastN = -1;
+  let rafId = null;
+  function buildNow(){
     const n = (ta.value.match(/\n/g)||[]).length + 1;
-    let html = '';
-    for(let i=1;i<=n;i++) html += i + '<br>';
-    gutter.innerHTML = html;
+    if(n !== lastN){
+      lastN = n;
+      const parts = new Array(n);
+      for(let i=1;i<=n;i++) parts[i-1] = i;
+      gutter.innerHTML = parts.join('<br>');
+    }
     gutter.scrollTop = ta.scrollTop;
   }
-  ta._refreshGutter = update;
+  function update(){
+    // debounce qua requestAnimationFrame de khong rebuild lien tuc khi go nhanh tren file dai (vd 10k dong)
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(()=>{ rafId = null; buildNow(); });
+  }
+  ta._refreshGutter = function(){ lastN = -1; buildNow(); };
   if(!ta._gutterWired){
     ta._gutterWired = true;
     ta.addEventListener('input', update);
     ta.addEventListener('scroll', ()=>{ gutter.scrollTop = ta.scrollTop; });
   }
-  update();
+  ta._refreshGutter();
 }
 wireGutter('fileEditor', 'fileEditorGutter');
 
