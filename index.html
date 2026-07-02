@@ -507,7 +507,7 @@
     </div>
     <div class="field">
       <label>Hết hạn sau</label>
-      <select id="shareTtlSelect">
+      <select id="shareTtlSelect" onchange="regenShareLink()">
         <option value="60">1 giờ</option>
         <option value="1440">1 ngày</option>
         <option value="10080">7 ngày</option>
@@ -539,6 +539,7 @@ let state = {
   ctxItem: null,
   authBlocked: false,
   search: { query: '', matches: [], current: -1 },
+  sharingPath: null,
 };
 
 function toast(msg){
@@ -1495,6 +1496,41 @@ async function saveFile(){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
+// ---------- SHARE LINK ----------
+async function openShareModal(path){
+  state.sharingPath = path;
+  document.getElementById('shareLinkOutput').value = 'Đang tạo link...';
+  openModal('shareModalBg');
+  await regenShareLink();
+}
+
+async function regenShareLink(){
+  if(!state.sharingPath) return;
+  const ttl = parseInt(document.getElementById('shareTtlSelect').value, 10) || 60;
+  document.getElementById('shareLinkOutput').value = 'Đang tạo link...';
+  try{
+    const data = await api('/api/files/share', {
+      method:'POST',
+      body: JSON.stringify({path: state.sharingPath, ttl_minutes: ttl})
+    });
+    const base = resolveApiBase();
+    document.getElementById('shareLinkOutput').value = base + '/view/' + data.token;
+    toast('Đã tạo link chia sẻ ✓');
+  }catch(e){
+    document.getElementById('shareLinkOutput').value = '';
+    toast('Lỗi: ' + e.message);
+  }
+}
+
+async function copyShareLink(){
+  const val = document.getElementById('shareLinkOutput').value;
+  if(!val || val.startsWith('Đang tạo')) return;
+  try{
+    await navigator.clipboard.writeText(val);
+    toast('Đã copy link ✓');
+  }catch(e){ toast('Không copy được: ' + e.message); }
+}
+
 // ---------- CONTEXT MENU (right-click / long-press) ----------
 // Gan len ca view-files (khong chi fileList) de bat duoc click vao khoang trong
 // ngoai cac dong file, tranh hien menu chuot phai mac dinh cua trinh duyet.
@@ -1546,6 +1582,7 @@ function showCtxMenu(e, item){
     <div class="ctx-item" onclick="ctxAction('open')">${openLabel}</div>
     <div class="ctx-item" onclick="ctxAction('rename')">✏️ Đổi tên</div>
     <div class="ctx-item" onclick="ctxAction('download')">⬇ Tải xuống</div>
+    ${!item.is_dir ? '<div class="ctx-item" onclick="ctxAction(\'share\')">🔗 Share</div>' : ''}
     <div class="ctx-item" onclick="ctxAction('select')">☑ Chọn</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item danger" onclick="ctxAction('delete')">🗑 Xóa</div>
@@ -1585,6 +1622,8 @@ async function ctxAction(action){
     openRenameModal(item.path, item.name);
   } else if(action === 'download'){
     downloadSinglePath(item.path, item.name, item.is_dir);
+  } else if(action === 'share'){
+    openShareModal(item.path);
   } else if(action === 'select'){
     if(!state.selectMode) toggleSelectMode();
     if(!state.selectedFiles.has(item.path)) toggleFileSelect(item.path);
