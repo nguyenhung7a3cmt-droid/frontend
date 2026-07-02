@@ -70,7 +70,20 @@
   .field{margin-bottom:12px;}
 
   .editor-wrap{position:relative; border:1.5px solid var(--line); border-radius:12px; overflow:hidden; background:var(--pink-soft);}
-  .editor-wrap textarea{border:none; border-radius:0; padding-left:56px; background:transparent; position:relative; z-index:1;}
+  .editor-wrap textarea{border:none; border-radius:0; padding-left:56px; background:transparent; position:relative; z-index:1; caret-color:var(--ink);}
+  .editor-backdrop{
+    position:absolute; top:0; left:44px; right:0; bottom:0; overflow:hidden; pointer-events:none; z-index:0;
+  }
+  .editor-backdrop .highlights{
+    margin:0; padding:11px 12px; font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.5; tab-size:4;
+    white-space:pre-wrap; word-wrap:break-word; word-break:break-word; color:transparent;
+  }
+  .editor-backdrop .highlights mark{
+    background:#FFD98B; color:transparent; border-radius:2px;
+  }
+  .editor-backdrop .highlights mark.mark-current{
+    background:#8B5CF6;
+  }
   .editor-gutter{
     position:absolute; top:0; left:0; bottom:0; width:44px; padding:11px 0;
     font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.5; color:var(--ink-soft);
@@ -284,6 +297,10 @@
   .find-bar input{flex:1; background:#fff; padding:8px 10px;}
   .find-bar .find-count{font-size:12px; color:var(--ink-soft); white-space:nowrap; flex-shrink:0; min-width:44px; text-align:center;}
   .find-bar .icon-btn{flex-shrink:0;}
+  #findInput{
+    font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.4; min-height:auto;
+    height:38px; max-height:96px; resize:none; overflow-y:auto; white-space:pre; padding:8px 10px;
+  }
   .host-row .field{flex:1; margin-bottom:0;}
 </style>
 </head>
@@ -416,7 +433,7 @@
       <span class="close-x" onclick="requestCloseFileModal()">✕</span>
     </div>
     <div class="find-bar" id="findBar">
-      <input type="text" id="findInput" placeholder="Tìm (dán nhiều dòng cũng được)...">
+      <textarea id="findInput" rows="1" placeholder="Tìm (dán nhiều dòng cũng được)..."></textarea>
       <span class="find-count" id="findCount">0/0</span>
       <span class="icon-btn" onclick="findPrev()" title="Trước (Shift+Enter)">↑</span>
       <span class="icon-btn" onclick="findNext()" title="Sau (Enter)">↓</span>
@@ -425,6 +442,7 @@
     <div class="field">
       <div class="editor-wrap">
         <div class="editor-gutter" id="fileEditorGutter">1</div>
+        <div class="editor-backdrop" id="fileEditorBackdrop"><pre class="highlights" id="fileEditorHighlights"></pre></div>
         <textarea id="fileEditor" spellcheck="false"></textarea>
       </div>
     </div>
@@ -472,6 +490,7 @@ let state = {
   renamingPath: null,
   ctxItem: null,
   authBlocked: false,
+  search: { query: '', matches: [], current: -1 },
 };
 
 function toast(msg){
@@ -563,6 +582,165 @@ function wireGutter(textareaId, gutterId){
   ta._refreshGutter();
 }
 wireGutter('fileEditor', 'fileEditorGutter');
+
+// ---------- TÌM KIẾM TRONG FILE EDITOR (thay Ctrl+F mặc định) ----------
+function escapeHtmlForHighlight(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Tim tat ca vi tri khop (khong phan biet hoa/thuong), ho tro chuoi nhieu dong
+function computeMatches(text, query){
+  const matches = [];
+  if(!query) return matches;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  let idx = 0;
+  while(idx <= lowerText.length){
+    const found = lowerText.indexOf(lowerQuery, idx);
+    if(found === -1) break;
+    matches.push({start: found, end: found + query.length});
+    idx = found + query.length;
+  }
+  return matches;
+}
+
+function renderHighlights(){
+  const ta = document.getElementById('fileEditor');
+  const hl = document.getElementById('fileEditorHighlights');
+  const text = ta.value;
+  const matches = state.search.matches;
+  if(matches.length === 0){
+    hl.innerHTML = escapeHtmlForHighlight(text) + '\n';
+    return;
+  }
+  let html = '';
+  let cursor = 0;
+  matches.forEach((m, i)=>{
+    html += escapeHtmlForHighlight(text.slice(cursor, m.start));
+    const cls = i === state.search.current ? ' class="mark-current"' : '';
+    html += `<mark${cls}>` + escapeHtmlForHighlight(text.slice(m.start, m.end)) + `</mark>`;
+    cursor = m.end;
+  });
+  html += escapeHtmlForHighlight(text.slice(cursor)) + '\n';
+  hl.innerHTML = html;
+}
+
+function updateFindCount(){
+  const el = document.getElementById('findCount');
+  const total = state.search.matches.length;
+  el.textContent = total === 0 ? '0/0' : (state.search.current + 1) + '/' + total;
+}
+
+function syncBackdropScroll(){
+  const ta = document.getElementById('fileEditor');
+  const bd = document.getElementById('fileEditorBackdrop');
+  bd.scrollTop = ta.scrollTop;
+  bd.scrollLeft = ta.scrollLeft;
+}
+
+function selectCurrentMatch(){
+  const ta = document.getElementById('fileEditor');
+  const m = state.search.matches[state.search.current];
+  if(!m) return;
+  ta.focus();
+  ta.setSelectionRange(m.start, m.end); // trinh duyet tu cuon textarea toi vung selection nay
+  requestAnimationFrame(syncBackdropScroll);
+}
+
+// keepPosition=true: dung khi noi dung file vua thay doi (dang go), khong nhay ve match dau
+function runSearch(query, opts={}){
+  const ta = document.getElementById('fileEditor');
+  state.search.query = query;
+  state.search.matches = computeMatches(ta.value, query);
+  if(state.search.matches.length === 0){
+    state.search.current = -1;
+  } else if(opts.keepPosition && state.search.current >= 0){
+    if(state.search.current >= state.search.matches.length) state.search.current = state.search.matches.length - 1;
+  } else {
+    const caret = ta.selectionStart;
+    let idx = state.search.matches.findIndex(m => m.start >= caret);
+    if(idx === -1) idx = 0;
+    state.search.current = idx;
+  }
+  renderHighlights();
+  updateFindCount();
+  if(state.search.current >= 0 && !opts.keepPosition) selectCurrentMatch();
+}
+
+function findNext(){
+  if(state.search.matches.length === 0) return;
+  state.search.current = (state.search.current + 1) % state.search.matches.length;
+  renderHighlights();
+  updateFindCount();
+  selectCurrentMatch();
+}
+
+function findPrev(){
+  if(state.search.matches.length === 0) return;
+  state.search.current = (state.search.current - 1 + state.search.matches.length) % state.search.matches.length;
+  renderHighlights();
+  updateFindCount();
+  selectCurrentMatch();
+}
+
+function openFindBar(){
+  const bar = document.getElementById('findBar');
+  bar.classList.add('show');
+  const input = document.getElementById('findInput');
+  input.focus();
+  input.select();
+  if(input.value) runSearch(input.value);
+}
+
+function closeFindBar(){
+  document.getElementById('findBar').classList.remove('show');
+  state.search.query = '';
+  state.search.matches = [];
+  state.search.current = -1;
+  renderHighlights();
+  document.getElementById('fileEditor').focus();
+}
+
+function resetSearchState(){
+  state.search = { query: '', matches: [], current: -1 };
+  document.getElementById('findInput').value = '';
+  document.getElementById('findBar').classList.remove('show');
+  document.getElementById('findCount').textContent = '0/0';
+  renderHighlights();
+}
+
+const findInputEl = document.getElementById('findInput');
+findInputEl.addEventListener('input', (e)=>{ runSearch(e.target.value); });
+findInputEl.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault(); // khong cho xuong dong khi go Enter, danh Enter cho tim tiep/lui
+    if(e.shiftKey) findPrev(); else findNext();
+  } else if(e.key === 'Escape'){
+    e.preventDefault();
+    closeFindBar();
+  }
+});
+
+const fileEditorEl = document.getElementById('fileEditor');
+fileEditorEl.addEventListener('keydown', function(e){
+  const isCtrlF = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F');
+  if(isCtrlF){
+    e.preventDefault(); // chan Ctrl+F mac dinh cua trinh duyet (voi lai no cung khong tim duoc trong textarea)
+    openFindBar();
+  } else if(e.key === 'Escape' && document.getElementById('findBar').classList.contains('show')){
+    e.preventDefault();
+    closeFindBar();
+  }
+});
+fileEditorEl.addEventListener('scroll', syncBackdropScroll);
+fileEditorEl.addEventListener('input', ()=>{
+  // neu dang tim va noi dung thay doi (vd vua sua code), tinh lai match de overlay khong bi lech
+  if(document.getElementById('findBar').classList.contains('show') && state.search.query){
+    runSearch(state.search.query, {keepPosition:true});
+  } else {
+    renderHighlights();
+  }
+});
 
 // Cảnh báo mất thay đổi chưa lưu khi đóng file editor
 document.getElementById('fileEditor').addEventListener('input', ()=>{
@@ -1170,10 +1348,12 @@ async function openFile(path){
   state.editingFileOriginal = '';
   document.getElementById('fileModalTitle').firstChild.textContent = path.split('/').pop();
   document.getElementById('fileDirtyDot').style.display = 'none';
+  resetSearchState();
   const editor = document.getElementById('fileEditor');
   editor.value = 'Đang tải…';
   editor.disabled = true;
   editor._refreshGutter && editor._refreshGutter();
+  renderHighlights();
   openModal('fileModalBg');
   try{
     const data = await api('/api/files/content?path=' + encodeURIComponent(path));
@@ -1182,6 +1362,7 @@ async function openFile(path){
     editor.value = data.content;
     editor.disabled = false;
     editor._refreshGutter && editor._refreshGutter();
+    renderHighlights();
   }catch(e){
     editor.disabled = false;
     closeModal('fileModalBg');
