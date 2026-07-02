@@ -639,13 +639,23 @@ function syncBackdropScroll(){
   bd.scrollLeft = ta.scrollLeft;
 }
 
+function scrollMatchIntoView(){
+  const ta = document.getElementById('fileEditor');
+  const markEl = document.querySelector('#fileEditorHighlights mark.mark-current');
+  if(!markEl) return;
+  const target = markEl.offsetTop - (ta.clientHeight / 2) + 10;
+  ta.scrollTop = Math.max(0, target);
+  syncBackdropScroll();
+}
+
 function selectCurrentMatch(){
   const ta = document.getElementById('fileEditor');
   const m = state.search.matches[state.search.current];
   if(!m) return;
-  ta.focus();
-  ta.setSelectionRange(m.start, m.end); // trinh duyet tu cuon textarea toi vung selection nay
-  requestAnimationFrame(syncBackdropScroll);
+  // KHONG goi ta.focus() o day, neu khong se cuop focus khoi o tim kiem
+  // khien nguoi dung go tiep se bi go nham vao code thay vi vao o tim.
+  ta.setSelectionRange(m.start, m.end);
+  requestAnimationFrame(scrollMatchIntoView);
 }
 
 // keepPosition=true: dung khi noi dung file vua thay doi (dang go), khong nhay ve match dau
