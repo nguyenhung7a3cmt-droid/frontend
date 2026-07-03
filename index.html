@@ -560,6 +560,21 @@
 
 
 <!-- Rename modal -->
+<!-- Custom confirm modal -->
+<div class="modal-bg small-modal" id="confirmModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="confirmModalTitle">Xác nhận</h3>
+      <span class="close-x" onclick="_confirmResolve(false)">✕</span>
+    </div>
+    <div id="confirmModalMsg" style="font-size:14px; color:var(--ink); white-space:pre-line; margin-bottom:16px;"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="confirmModalOkBtn" onclick="_confirmResolve(true)">Xác nhận</button>
+      <button class="btn btn-ghost" onclick="_confirmResolve(false)">Hủy</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg small-modal" id="renameModalBg">
   <div class="modal">
     <div class="modal-header">
@@ -1655,13 +1670,28 @@ async function handleUploadInput(ev){
   await uploadFiles(files);
 }
 
+let _confirmResolveFn = null;
+function customConfirm(title, message, okLabel='Xác nhận'){
+  return new Promise(resolve=>{
+    _confirmResolveFn = resolve;
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalMsg').textContent = message;
+    document.getElementById('confirmModalOkBtn').textContent = okLabel;
+    openModal('confirmModalBg');
+  });
+}
+function _confirmResolve(val){
+  closeModal('confirmModalBg');
+  if(_confirmResolveFn){ _confirmResolveFn(val); _confirmResolveFn = null; }
+}
+
 async function uploadFiles(files){
   if(!files || files.length === 0) return;
   const existingNames = new Set((state.lastFileItems || []).filter(it=>!it.is_dir).map(it=>it.name));
   const dupFiles = files.filter(f => existingNames.has(f.name));
   if(dupFiles.length){
     const names = dupFiles.map(f=>f.name).join(', ');
-    const ok = confirm(`${dupFiles.length} file đã tồn tại: ${names}\n\nGhi đè file cũ bằng file mới?`);
+    const ok = await customConfirm('File đã tồn tại', `${dupFiles.length} file đã tồn tại: ${names}\n\nGhi đè file cũ bằng file mới?`, 'Ghi đè');
     if(!ok){
       files = files.filter(f => !existingNames.has(f.name));
       if(files.length === 0){ toast('Đã hủy upload'); return; }
