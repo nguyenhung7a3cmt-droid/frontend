@@ -671,6 +671,20 @@
 <div class="ctx-menu" id="ctxMenu"></div>
 
 <script>
+// ---------- CONFIG: dia chi backend that su cho auth/config (dashboard nay dang host tinh tren GitHub Pages,
+// khac origin voi backend, nen KHONG the dung relative URL '/api/...' duoc nua) ----------
+const AUTH_BASE = 'https://quanly.freesrv.com';
+
+function resolveAuthBase(){
+  let url = AUTH_BASE.replace(/\/$/,'');
+  // neu trang dang chay https (vd GitHub Pages) ma AUTH_BASE lo la http:// thi nang cap len https
+  // de tranh bi trinh duyet chan do mixed-content.
+  if(location.protocol === 'https:' && url.startsWith('http://')){
+    url = 'https://' + url.slice(7);
+  }
+  return url;
+}
+
 // ---------- LOGIN / ĐĂNG KÝ GATE (server-side, dung chung /api/auth/*) ----------
 // Xac thuc that su nam o server (dashboard_api.py): mat khau duoc bam PBKDF2 + luu
 // tren server, dang nhap tra ve 1 session token (Bearer) luu trong localStorage cua
@@ -729,8 +743,9 @@ async function doLogout(){
   location.reload();
 }
 
-// Goi cac endpoint auth/config: luon cung origin voi trang dashboard nay (relative URL),
-// khac voi api()/apiRaw() von goi ve API cua tung HOST rieng (X-API-Key, apiUrl khac nhau).
+// Goi cac endpoint auth/config: LUON goi ve AUTH_BASE (backend that su), khong con dung
+// relative URL nua vi trang dashboard co the dang duoc host tren mot origin khac (vd GitHub Pages).
+// Khac voi api()/apiRaw() von goi ve API cua tung HOST rieng (X-API-Key, apiUrl khac nhau).
 async function authApi(path, options={}){
   const headers = { ...(options.headers||{}) };
   if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
@@ -739,7 +754,7 @@ async function authApi(path, options={}){
   }
   let res;
   try{
-    res = await fetch(path, { ...options, headers });
+    res = await fetch(resolveAuthBase() + path, { ...options, headers });
   }catch(e){
     throw new Error('Không kết nối được tới server dashboard');
   }
