@@ -197,6 +197,8 @@
   .tab:active{transform:scale(.94);}
   .tab .ic{font-size:18px; transition:transform .15s;}
   .tab.active .ic{transform:scale(1.12);}
+  .tab .ic-svg{color:var(--ink-soft); display:flex; align-items:center; justify-content:center;}
+  .tab.active .ic-svg{color:var(--violet-deep);}
 
   .view{display:none;}
   .view.active{display:block; animation:fadeInUp .25s ease-out both;}
@@ -237,6 +239,13 @@
   .selection-bar .btn-ghost{background:rgba(255,255,255,.12); color:#fff;}
 
   .small-modal .modal{max-width:420px; margin:0 auto; border-radius:24px;}
+  .diff-line-del{background:#F8B4CB; border-radius:4px;}
+  .diff-line-add{background:#A8E6BC; border-radius:4px;}
+  .diff-lineno{color:var(--ink-soft); opacity:.6; min-width:32px; text-align:right; padding-right:8px; user-select:none; flex-shrink:0;}
+  .diff-col-title{font-weight:700; font-size:13px; color:var(--violet-deep); background:var(--pink-soft); padding:6px 10px; border-radius:10px 10px 0 0;}
+  .diff-col{background:var(--pink-soft); border-radius:0 0 12px 12px; padding:8px; font-family:'JetBrains Mono',monospace; font-size:11.5px; height:38vh; overflow:auto; margin-bottom:6px; resize:vertical; min-height:100px;}
+  .diff-resize-hint{text-align:center; font-size:11px; color:var(--ink-soft); margin:0 0 10px; opacity:.7;}
+  .btn-view{background:var(--pink-soft); color:var(--violet-deep); border:1.5px solid var(--line); border-radius:11px; padding:7px 12px; font-size:12.5px; font-weight:700; cursor:pointer;}
 
   .icon-only{padding:11px 13px; font-size:15px; line-height:1;}
 
@@ -451,6 +460,28 @@
     </div>
   </div>
 
+  <!-- SYNC VIEW -->
+  <div class="view" id="view-sync">
+    <div class="card">
+      <h3>Đồng bộ code giữa 2 host</h3>
+      <div class="field">
+        <label>Host A</label>
+        <select id="syncHostA"></select>
+      </div>
+      <div class="field">
+        <label>Host B</label>
+        <select id="syncHostB"></select>
+      </div>
+      <div class="btn-row" style="margin-top:0;">
+        <button class="btn btn-primary" onclick="openSyncPanel()">🔍 Quét &amp; so sánh</button>
+      </div>
+    </div>
+    <div class="card" id="syncResultCard" style="display:none;">
+      <h3>Kết quả</h3>
+      <div id="syncPanel"></div>
+    </div>
+  </div>
+
 </div>
 
 <div class="tabbar">
@@ -459,6 +490,14 @@
   </div>
   <div class="tab" data-view="files" onclick="switchTab('files')">
     <span class="ic">📁</span>Files
+  </div>
+  <div class="tab" data-view="sync" onclick="switchTab('sync')">
+    <span class="ic ic-svg">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+        <path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+      </svg>
+    </span>Đồng bộ
   </div>
 </div>
 
@@ -524,6 +563,18 @@
 </div>
 
 <!-- Share link modal -->
+<!-- Diff view modal -->
+<div class="modal-bg" id="diffModalBg">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="diffModalTitle">file.py</h3>
+      <span class="close-x" onclick="closeModal('diffModalBg')">✕</span>
+    </div>
+    <div id="diffHostLabels"></div>
+    <div id="diffBody" style="width:100%;"></div>
+  </div>
+</div>
+
 <div class="modal-bg small-modal" id="shareModalBg">
   <div class="modal">
     <div class="modal-header">
@@ -587,6 +638,7 @@ function switchTab(name){
   if(name!=='files'){ cancelSelection(); }
   if(name==='files') loadFiles(state.currentPath);
   if(name==='settings') refreshBotStatus();
+  if(name==='sync') populateSyncSelects();
   stopBotStatusPolling();
   if(name==='settings') startBotStatusPolling();
 }
@@ -1668,6 +1720,192 @@ document.addEventListener('contextmenu', function(e){
   if(e.target.closest('input, textarea')) return; // giu menu goc de Copy/Paste
   e.preventDefault();
 });
+
+// ---------- SYNC 2 HOST ----------
+const SYNC_EXT_OK = new Set(['.py','.json','.lua','.txt','.md','.env','.cfg','.yaml','.yml']);
+
+function populateSyncSelects(){
+  const optA = document.getElementById('syncHostA');
+  const optB = document.getElementById('syncHostB');
+  const opts = state.hosts.map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
+  optA.innerHTML = opts;
+  optB.innerHTML = opts;
+  if(state.hosts.length > 1) optB.value = state.hosts[1].id;
+  document.getElementById('syncResultCard').style.display = 'none';
+}
+
+function syncResolveBase(host){
+  let url = host.apiUrl.replace(/\/$/,'');
+  if(location.protocol === 'https:' && url.startsWith('http://')) url = 'https://' + url.slice(7);
+  return url;
+}
+async function syncApi(host, path, options={}){
+  const headers = { 'X-API-Key': host.apiKey, ...(options.headers||{}) };
+  if(!(options.body instanceof FormData) && options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const res = await fetch(syncResolveBase(host) + path, { ...options, headers });
+  if(!res.ok){
+    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
+    throw new Error(host.name + ': ' + (err.detail || res.statusText));
+  }
+  return res.json();
+}
+async function syncListAllFiles(host, dir=''){
+  const data = await syncApi(host, '/api/files?path=' + encodeURIComponent(dir));
+  let out = [];
+  for(const item of data.items){
+    if(item.is_dir) out = out.concat(await syncListAllFiles(host, item.path));
+    else {
+      const ext = '.' + item.name.split('.').pop();
+      if(SYNC_EXT_OK.has(ext)) out.push(item);
+    }
+  }
+  return out;
+}
+async function syncFetchContent(host, path){
+  const data = await syncApi(host, '/api/files/content?path=' + encodeURIComponent(path));
+  return data.content;
+}
+async function syncPushContent(host, path, content){
+  return syncApi(host, '/api/files/content', { method:'PUT', body: JSON.stringify({path, content}) });
+}
+
+async function openSyncPanel(){
+  const idA = document.getElementById('syncHostA').value;
+  const idB = document.getElementById('syncHostB').value;
+  if(!idA || !idB || idA === idB){ toast('Chọn 2 host khác nhau'); return; }
+  const hostA = state.hosts.find(h=>h.id===idA);
+  const hostB = state.hosts.find(h=>h.id===idB);
+
+  const card = document.getElementById('syncResultCard');
+  const panel = document.getElementById('syncPanel');
+  card.style.display = 'block';
+  panel.innerHTML = '<p>Đang quét file 2 host...</p>';
+
+  let filesA, filesB;
+  try{
+    [filesA, filesB] = await Promise.all([syncListAllFiles(hostA), syncListAllFiles(hostB)]);
+  }catch(e){
+    panel.innerHTML = `<p style="color:var(--danger)">Lỗi: ${e.message}</p>`;
+    return;
+  }
+
+  const mapA = new Map(filesA.map(f=>[f.path, f]));
+  const mapB = new Map(filesB.map(f=>[f.path, f]));
+  const common = [...mapA.keys()].filter(p=>mapB.has(p));
+
+  panel.innerHTML = `<p>Đang so sánh ${common.length} file trùng tên...</p>`;
+  const diffs = [];
+  for(const path of common){
+    let ca, cb;
+    try{ [ca, cb] = await Promise.all([syncFetchContent(hostA, path), syncFetchContent(hostB, path)]); }
+    catch(e){ continue; }
+    if(ca !== cb) diffs.push({path, ca, cb});
+  }
+
+  window._syncDiffs = diffs;
+  window._syncHosts = {hostA, hostB};
+  window._syncDirs = {};
+
+  if(diffs.length === 0){ panel.innerHTML = '<p>✅ Không có file nào khác nhau.</p>'; return; }
+
+  let html = `<table class="sync-table" style="width:100%;border-collapse:collapse;font-size:12.5px;">
+    <tr><th></th><th>File</th><th></th><th>Hướng đồng bộ</th></tr>`;
+  diffs.forEach((d, idx)=>{
+    html += `
+      <tr>
+        <td><input type="checkbox" id="sync_${idx}" checked style="width:18px;height:18px;"></td>
+        <td>${d.path}</td>
+        <td><button class="btn-view" onclick="viewDiff(${idx})">🔎 Xem</button></td>
+        <td>
+          <label><input type="radio" name="dir_${idx}" value="A2B" checked onchange="setSyncDir(${idx},'A2B')"> ${hostA.name} → ${hostB.name}</label><br>
+          <label><input type="radio" name="dir_${idx}" value="B2A" onchange="setSyncDir(${idx},'B2A')"> ${hostB.name} → ${hostA.name}</label>
+        </td>
+      </tr>`;
+    window._syncDirs[idx] = 'A2B';
+  });
+  html += `</table><div class="btn-row"><button class="btn btn-primary" onclick="applySync()">✅ Áp dụng đã chọn</button></div>`;
+  panel.innerHTML = html;
+}
+function setSyncDir(idx, dir){ window._syncDirs[idx] = dir; }
+async function applySync(){
+  const {hostA, hostB} = window._syncHosts;
+  const diffs = window._syncDiffs;
+  let ok = 0, fail = 0;
+  for(let idx=0; idx<diffs.length; idx++){
+    const cb = document.getElementById(`sync_${idx}`);
+    if(!cb || !cb.checked) continue;
+    const {path, ca, cb: cbContent} = diffs[idx];
+    const dir = window._syncDirs[idx] || 'A2B';
+    try{
+      if(dir==='A2B') await syncPushContent(hostB, path, ca);
+      else await syncPushContent(hostA, path, cbContent);
+      ok++;
+    }catch(e){ fail++; }
+  }
+  toast(`Đồng bộ xong: ${ok} OK, ${fail} lỗi`);
+  document.getElementById('syncResultCard').style.display = 'none';
+}
+function escapeHtmlSync(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function lcsDiff(a, b){
+  const n = a.length, m = b.length;
+  const dp = Array.from({length:n+1}, ()=>new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--){
+    for(let j=m-1;j>=0;j--){
+      dp[i][j] = a[i]===b[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+    }
+  }
+  const outA = [], outB = [];
+  let i=0, j=0;
+  while(i<n && j<m){
+    if(a[i]===b[j]){ outA.push({t:a[i],c:'same'}); outB.push({t:b[j],c:'same'}); i++; j++; }
+    else if(dp[i+1][j] >= dp[i][j+1]){ outA.push({t:a[i],c:'del'}); i++; }
+    else { outB.push({t:b[j],c:'add'}); j++; }
+  }
+  while(i<n){ outA.push({t:a[i],c:'del'}); i++; }
+  while(j<m){ outB.push({t:b[j],c:'add'}); j++; }
+  return {outA, outB};
+}
+function viewDiff(idx){
+  const d = window._syncDiffs[idx];
+  const {hostA, hostB} = window._syncHosts;
+  document.getElementById('diffModalTitle').textContent = d.path;
+  document.getElementById('diffHostLabels').innerHTML = '';
+
+  const linesA = d.ca.split('\n');
+  const linesB = d.cb.split('\n');
+
+  const tooBig = linesA.length * linesB.length > 250000;
+  let outA, outB;
+  if(tooBig){
+    toast('File dài/khác nhiều, dùng so sánh nhanh (không canh dòng)');
+    outA = linesA.map(t=>({t, c: linesB.includes(t) ? 'same' : 'del'}));
+    outB = linesB.map(t=>({t, c: linesA.includes(t) ? 'same' : 'add'}));
+  } else {
+    const r = lcsDiff(linesA, linesB);
+    outA = r.outA; outB = r.outB;
+  }
+  const changedA = outA.filter(x=>x.c!=='same').length;
+  const changedB = outB.filter(x=>x.c!=='same').length;
+
+  const renderColSimple = (rows) => rows.map((r,i)=>{
+    const cls = r.c==='same' ? '' : (r.c==='del' ? 'diff-line-del' : 'diff-line-add');
+    return `<div class="${cls}" style="display:flex;"><span class="diff-lineno">${i+1}</span><span style="white-space:pre;flex:1;">${escapeHtmlSync(r.t) || '&nbsp;'}</span></div>`;
+  }).join('');
+
+  document.getElementById('diffBody').innerHTML = `
+    <div style="width:100%;">
+      <div class="diff-col-title">${hostA.name} — ${changedA} dòng khác</div>
+      <div class="diff-col">${renderColSimple(outA)}</div>
+      <div class="diff-resize-hint">↕ kéo góc dưới phải để giãn khung</div>
+      <div class="diff-col-title">${hostB.name} — ${changedB} dòng khác</div>
+      <div class="diff-col">${renderColSimple(outB)}</div>
+      <div class="diff-resize-hint">↕ kéo góc dưới phải để giãn khung</div>
+    </div>
+  `;
+  openModal('diffModalBg');
+}
 
 document.getElementById('view-files').addEventListener('contextmenu', function(e){
   e.preventDefault();
