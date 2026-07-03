@@ -1477,9 +1477,67 @@ async function loadFiles(path=''){
   }
 }
 
+async function listAllFilesFlat(dir=''){
+  const data = await api('/api/files?path=' + encodeURIComponent(dir));
+  let out = [];
+  for(const item of data.items){
+    if(item.is_dir) out = out.concat(await listAllFilesFlat(item.path));
+    else out.push(item);
+  }
+  return out;
+}
+let _fileSearchDebounce = null;
+let _fileSearchToken = 0;
+function onFileSearchInput(){
+  const q = (document.getElementById('fileSearch').value || '').trim();
+  clearTimeout(_fileSearchDebounce);
+  if(!q){
+    state.deepSearchResults = null;
+    renderFileList();
+    return;
+  }
+  _fileSearchDebounce = setTimeout(()=>doDeepFileSearch(q), 300);
+}
+async function doDeepFileSearch(q){
+  const token = ++_fileSearchToken;
+  const list = document.getElementById('fileList');
+  list.innerHTML = '<div class="empty">Đang tìm trong toàn bộ thư mục...</div>';
+  try{
+    const all = await listAllFilesFlat('');
+    if(token !== _fileSearchToken) return; // co query moi hon, bo ket qua cu
+    const ql = q.toLowerCase();
+    state.deepSearchResults = all.filter(it => it.name.toLowerCase().includes(ql) || it.path.toLowerCase().includes(ql));
+    renderFileList();
+  }catch(e){
+    if(token !== _fileSearchToken) return;
+    list.innerHTML = `<div class="empty">Lỗi tìm kiếm: ${e.message}</div>`;
+  }
+}
+
 function renderFileList(){
   const list = document.getElementById('fileList');
   const q = (document.getElementById('fileSearch').value || '').trim().toLowerCase();
+
+  if(q && state.deepSearchResults){
+    const items = state.deepSearchResults;
+    if(items.length === 0){
+      list.innerHTML = `<div class="empty">Không tìm thấy file phù hợp trong toàn bộ thư mục</div>`;
+      return;
+    }
+    list.innerHTML = items.map(it=>{
+      const icon = FILE_ICONS[it.name.slice(it.name.lastIndexOf('.'))] || (it.name === '.env' ? '🔐' : '📄');
+      const dirOf = it.path.includes('/') ? it.path.slice(0, it.path.lastIndexOf('/')) : 'root';
+      return `<div class="file-row" data-path="${it.path}" onclick="openFile('${it.path}')">
+        <div class="file-name">
+          <span class="file-icon">${icon}</span>
+          <div style="min-width:0;"><div>${it.name}</div><div class="file-meta">📁 ${dirOf} · ${(it.size/1024).toFixed(1)} KB</div></div>
+        </div>
+        <div class="file-actions"><span class="chevron">›</span></div>
+      </div>`;
+    }).join('');
+    return;
+  }
+
   let items = state.lastFileItems;
   if(q) items = items.filter(it => it.name.toLowerCase().includes(q));
   if(!items || items.length === 0){
@@ -1599,6 +1657,16 @@ async function handleUploadInput(ev){
 
 async function uploadFiles(files){
   if(!files || files.length === 0) return;
+  const existingNames = new Set((state.lastFileItems || []).filter(it=>!it.is_dir).map(it=>it.name));
+  const dupFiles = files.filter(f => existingNames.has(f.name));
+  if(dupFiles.length){
+    const names = dupFiles.map(f=>f.name).join(', ');
+    const ok = confirm(`${dupFiles.length} file đã tồn tại: ${names}\n\nGhi đè file cũ bằng file mới?`);
+    if(!ok){
+      files = files.filter(f => !existingNames.has(f.name));
+      if(files.length === 0){ toast('Đã hủy upload'); return; }
+    }
+  }
   let ok = 0, fail = 0;
   for(const f of files){
     try{
