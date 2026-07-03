@@ -496,6 +496,7 @@
       <h3>Server</h3>
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="restartServer()">🔄 Restart toàn bộ server</button>
+        <button class="btn btn-danger" onclick="doLogout()">🚪 Đăng xuất</button>
       </div>
     </div>
   </div>
@@ -659,12 +660,34 @@
 
 <script>
 // ---------- LOGIN / ĐĂNG KÝ GATE ----------
-// Chỉ chặn UI phía client, không phải bảo mật thật sự (API key backend mới là lớp bảo vệ chính)
+// Chỉ chặn UI phía client, không phải bảo mật thật sự (API key backend mới là lớp bảo vệ chính).
+// Mật khẩu được băm bằng SHA-256 trước khi lưu (không lưu plaintext), và phiên đăng nhập tự hết hạn sau 24h.
 let loginMode = 'login'; // 'login' | 'register'
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 function hasAccount(){
   return !!localStorage.getItem('dash_account');
 }
+
+function isSessionValid(){
+  const exp = parseInt(localStorage.getItem('dash_auth_exp') || '0', 10);
+  return !!exp && Date.now() < exp;
+}
+
+function startSession(){
+  localStorage.setItem('dash_auth_exp', String(Date.now() + SESSION_TTL_MS));
+}
+
+function endSession(){
+  localStorage.removeItem('dash_auth_exp');
+}
+
 function renderLoginGate(){
   const isRegister = loginMode === 'register';
   document.getElementById('loginGateTitle').textContent = isRegister ? 'Đăng ký tài khoản' : 'Đăng nhập';
@@ -676,11 +699,12 @@ function renderLoginGate(){
     sw.textContent = 'Đã có tài khoản? Đăng nhập';
     sw.onclick = ()=>{ loginMode='login'; renderLoginGate(); };
   } else {
-    sw.textContent = '';
-    sw.onclick = null;
+    sw.textContent = hasAccount() ? '' : 'Chưa có tài khoản? Đăng ký';
+    sw.onclick = hasAccount() ? null : (()=>{ loginMode='register'; renderLoginGate(); });
   }
 }
-function doLoginOrRegister(){
+
+async function doLoginOrRegister(){
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
   const errEl = document.getElementById('loginErr');
@@ -689,15 +713,18 @@ function doLoginOrRegister(){
   if(loginMode === 'register'){
     const p2 = document.getElementById('loginPass2').value;
     if(p !== p2){ errEl.textContent = 'Mật khẩu nhập lại không khớp'; errEl.style.display='block'; return; }
-    localStorage.setItem('dash_account', JSON.stringify({u, p}));
-    localStorage.setItem('dash_auth_ok', '1');
+    if(p.length < 6){ errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; errEl.style.display='block'; return; }
+    const hash = await sha256Hex(p);
+    localStorage.setItem('dash_account', JSON.stringify({u, hash}));
+    startSession();
     document.getElementById('loginGate').classList.remove('show');
     return;
   }
 
   const acc = JSON.parse(localStorage.getItem('dash_account') || 'null');
-  if(acc && acc.u === u && acc.p === p){
-    localStorage.setItem('dash_auth_ok', '1');
+  const hash = await sha256Hex(p);
+  if(acc && acc.u === u && acc.hash === hash){
+    startSession();
     document.getElementById('loginGate').classList.remove('show');
   } else {
     errEl.textContent = 'Sai tài khoản hoặc mật khẩu';
@@ -705,9 +732,16 @@ function doLoginOrRegister(){
   }
 }
 
-if(localStorage.getItem('dash_auth_ok') === '1'){
+function doLogout(){
+  if(!confirm('Đăng xuất khỏi dashboard?')) return;
+  endSession();
+  location.reload();
+}
+
+if(isSessionValid()){
   document.getElementById('loginGate').classList.remove('show');
 } else {
+  endSession();
   loginMode = hasAccount() ? 'login' : 'register';
   renderLoginGate();
 }
