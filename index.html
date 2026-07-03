@@ -207,6 +207,16 @@
   .tab .ic, .tab .ic-svg svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1);}
   .tab.active .ic, .tab.active .ic-svg svg{transform:scale(1.15);}
   .card{transition:box-shadow .2s, transform .15s;}
+  #view-files{position:relative;}
+  #view-files.drag-over::after{
+    content:"⬇ Thả file để tải lên";
+    position:fixed; inset:0; z-index:60;
+    background:rgba(139,92,246,.16); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Baloo 2',sans-serif; font-size:20px; font-weight:700; color:var(--violet-deep);
+    border:3px dashed var(--violet); border-radius:20px; margin:8px;
+    pointer-events:none; animation:fadeIn .15s ease-out both;
+  }
 
   .toast{
     position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
@@ -1584,7 +1594,11 @@ function triggerUpload(){
 async function handleUploadInput(ev){
   const files = [...ev.target.files];
   ev.target.value = '';
-  if(files.length === 0) return;
+  await uploadFiles(files);
+}
+
+async function uploadFiles(files){
+  if(!files || files.length === 0) return;
   let ok = 0, fail = 0;
   for(const f of files){
     try{
@@ -1601,6 +1615,31 @@ async function handleUploadInput(ev){
   if(ok) toast(`Đã thêm ${ok} file ✓` + (fail?` (${fail} lỗi)`:''));
   loadFiles(state.currentPath);
 }
+
+// ---------- DRAG & DROP ----------
+(function setupDragDrop(){
+  const zone = document.getElementById('view-files');
+  if(!zone) return;
+  let dragCounter = 0;
+  zone.addEventListener('dragenter', e=>{
+    e.preventDefault();
+    dragCounter++;
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragover', e=>{ e.preventDefault(); });
+  zone.addEventListener('dragleave', e=>{
+    e.preventDefault();
+    dragCounter--;
+    if(dragCounter <= 0){ dragCounter = 0; zone.classList.remove('drag-over'); }
+  });
+  zone.addEventListener('drop', e=>{
+    e.preventDefault();
+    dragCounter = 0;
+    zone.classList.remove('drag-over');
+    const files = [...(e.dataTransfer?.files || [])];
+    if(files.length) uploadFiles(files);
+  });
+})();
 
 async function createBlankFile(){
   const name = prompt('Tên file mới (vd: notes.txt):');
