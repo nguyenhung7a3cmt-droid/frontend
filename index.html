@@ -352,6 +352,31 @@
 </head>
 <body>
 
+<div id="loginGate" class="modal-bg show" style="align-items:center; z-index:100;">
+  <div class="modal" style="max-width:340px; border-radius:24px; margin:0 auto;">
+    <div class="modal-header">
+      <h3 id="loginGateTitle">Đăng nhập</h3>
+    </div>
+    <div class="field">
+      <label>Tài khoản</label>
+      <input type="text" id="loginUser" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Mật khẩu</label>
+      <input type="password" id="loginPass" autocomplete="new-password" onkeydown="if(event.key==='Enter') doLoginOrRegister()">
+    </div>
+    <div class="field" id="loginPass2Wrap" style="display:none;">
+      <label>Nhập lại mật khẩu</label>
+      <input type="password" id="loginPass2" autocomplete="new-password" onkeydown="if(event.key==='Enter') doLoginOrRegister()">
+    </div>
+    <div id="loginErr" style="color:var(--danger); font-size:12.5px; margin-bottom:8px; display:none;"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="loginGateBtn" onclick="doLoginOrRegister()" style="width:100%; justify-content:center;">Đăng nhập</button>
+    </div>
+    <p id="loginGateSwitch" style="font-size:12.5px; color:var(--ink-soft); text-align:center; margin-top:10px; cursor:pointer;"></p>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="eyebrow">Bot Dashboard</div>
   <h1 id="botTitle">Quản lý bot</h1>
@@ -633,6 +658,60 @@
 <div class="ctx-menu" id="ctxMenu"></div>
 
 <script>
+// ---------- LOGIN / ĐĂNG KÝ GATE ----------
+// Chỉ chặn UI phía client, không phải bảo mật thật sự (API key backend mới là lớp bảo vệ chính)
+let loginMode = 'login'; // 'login' | 'register'
+
+function hasAccount(){
+  return !!localStorage.getItem('dash_account');
+}
+function renderLoginGate(){
+  const isRegister = loginMode === 'register';
+  document.getElementById('loginGateTitle').textContent = isRegister ? 'Đăng ký tài khoản' : 'Đăng nhập';
+  document.getElementById('loginGateBtn').textContent = isRegister ? 'Đăng ký' : 'Đăng nhập';
+  document.getElementById('loginPass2Wrap').style.display = isRegister ? 'block' : 'none';
+  document.getElementById('loginErr').style.display = 'none';
+  const sw = document.getElementById('loginGateSwitch');
+  if(isRegister){
+    sw.textContent = 'Đã có tài khoản? Đăng nhập';
+    sw.onclick = ()=>{ loginMode='login'; renderLoginGate(); };
+  } else {
+    sw.textContent = '';
+    sw.onclick = null;
+  }
+}
+function doLoginOrRegister(){
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginErr');
+  if(!u || !p){ errEl.textContent = 'Nhập đủ tài khoản và mật khẩu'; errEl.style.display='block'; return; }
+
+  if(loginMode === 'register'){
+    const p2 = document.getElementById('loginPass2').value;
+    if(p !== p2){ errEl.textContent = 'Mật khẩu nhập lại không khớp'; errEl.style.display='block'; return; }
+    localStorage.setItem('dash_account', JSON.stringify({u, p}));
+    localStorage.setItem('dash_auth_ok', '1');
+    document.getElementById('loginGate').classList.remove('show');
+    return;
+  }
+
+  const acc = JSON.parse(localStorage.getItem('dash_account') || 'null');
+  if(acc && acc.u === u && acc.p === p){
+    localStorage.setItem('dash_auth_ok', '1');
+    document.getElementById('loginGate').classList.remove('show');
+  } else {
+    errEl.textContent = 'Sai tài khoản hoặc mật khẩu';
+    errEl.style.display = 'block';
+  }
+}
+
+if(localStorage.getItem('dash_auth_ok') === '1'){
+  document.getElementById('loginGate').classList.remove('show');
+} else {
+  loginMode = hasAccount() ? 'login' : 'register';
+  renderLoginGate();
+}
+
 let state = {
   hosts: [],
   activeHostId: null,
