@@ -671,11 +671,38 @@
 <div class="ctx-menu" id="ctxMenu"></div>
 
 <script>
-// ---------- LOGIN / ĐĂNG KÝ GATE (server-side, dung chung /api/auth/*) ----------
-// Xac thuc that su nam o server (dashboard_api.py): mat khau duoc bam PBKDF2 + luu
-// tren server, dang nhap tra ve 1 session token (Bearer) luu trong localStorage cua
-// thiet bi nay. Khong con luu tai khoan/mat khau (hay hash) o phia trinh duyet nua.
+// ---------- LOGIN / ĐĂNG KÝ GATE (dùng chung server, đăng nhập được từ mọi thiết bị) ----------
+// Auth chạy qua backend (/api/auth/*), KHÔNG dùng localStorage để lưu tài khoản nữa.
+// Chỉ lưu lại "session token" (giống như 1 chiếc chìa khóa tạm) trên thiết bị này,
+// nên mỗi thiết bị vẫn cần đăng nhập ít nhất 1 lần, nhưng dùng ĐÚNG 1 tài khoản chung.
 let loginMode = 'login'; // 'login' | 'register'
+let authToken = localStorage.getItem('dash_session_token') || '';
+
+function authHeaders(){
+  return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
+}
+
+// Gọi API auth/config: luôn cùng gốc (origin) với trang dashboard đang mở,
+// không phụ thuộc vào host bot nào đang chọn ở mục Cài đặt.
+async function authFetch(path, options={}){
+  const headers = { ...(options.headers||{}), ...authHeaders() };
+  if(options.body !== undefined && !(options.body instanceof FormData)){
+    headers['Content-Type'] = 'application/json';
+  }
+  let res;
+  try{
+    res = await fetch(path, { ...options, headers });
+  }catch(e){
+    throw new Error('Không kết nối được tới server dashboard');
+  }
+  if(!res.ok){
+    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
+    const e = new Error(err.detail || res.statusText);
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
+}
 
 function setLoginMode(mode){
   loginMode = mode;
@@ -697,7 +724,6 @@ async function doLoginOrRegister(){
   const p = document.getElementById('loginPass').value;
   const errEl = document.getElementById('loginErr');
   const btn = document.getElementById('loginGateBtn');
-  errEl.style.display = 'none';
   if(!u || !p){ errEl.textContent = 'Nhập đủ tài khoản và mật khẩu'; errEl.style.display='block'; return; }
 
   if(loginMode === 'register'){
@@ -707,15 +733,19 @@ async function doLoginOrRegister(){
   }
 
   btn.disabled = true;
+  errEl.style.display = 'none';
   try{
     const path = loginMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-    const data = await authApi(path, { method:'POST', body: JSON.stringify({username:u, password:p}) });
-    state.token = data.token;
-    localStorage.setItem('dash_token', data.token);
+    const data = await authFetch(path, {
+      method: 'POST',
+      body: JSON.stringify({ username: u, password: p })
+    });
+    authToken = data.token;
+    localStorage.setItem('dash_session_token', authToken);
     document.getElementById('loginGate').classList.remove('show');
-    await initAfterLogin();
+    await afterLogin();
   }catch(e){
-    errEl.textContent = e.message || 'Có lỗi xảy ra';
+    errEl.textContent = e.message || 'Lỗi đăng nhập';
     errEl.style.display = 'block';
   }finally{
     btn.disabled = false;
@@ -724,60 +754,37 @@ async function doLoginOrRegister(){
 
 async function doLogout(){
   if(!confirm('Đăng xuất khỏi dashboard?')) return;
-  try{ await authApi('/api/auth/logout', {method:'POST'}); }catch(e){}
-  localStorage.removeItem('dash_token');
+  try{ await authFetch('/api/auth/logout', {method:'POST'}); }catch(e){ /* du server co loi cung cu logout local */ }
+  localStorage.removeItem('dash_session_token');
   location.reload();
 }
 
-// Goi cac endpoint auth/config: luon cung origin voi trang dashboard nay (relative URL),
-// khac voi api()/apiRaw() von goi ve API cua tung HOST rieng (X-API-Key, apiUrl khac nhau).
-async function authApi(path, options={}){
-  const headers = { ...(options.headers||{}) };
-  if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
-  if(!(options.body instanceof FormData) && options.body !== undefined){
-    headers['Content-Type'] = 'application/json';
+// Kiem tra session hien co con hop le khong (goi /api/auth/me). Neu khong -> hien gate.
+async function checkExistingSession(){
+  if(!authToken){
+    await showLoginGate();
+    return;
   }
-  let res;
   try{
-    res = await fetch(path, { ...options, headers });
+    await authFetch('/api/auth/me');
+    document.getElementById('loginGate').classList.remove('show');
+    await afterLogin();
   }catch(e){
-    throw new Error('Không kết nối được tới server dashboard');
+    localStorage.removeItem('dash_session_token');
+    authToken = '';
+    await showLoginGate();
   }
-  if(!res.ok){
-    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
-    const e = new Error(err.detail || res.statusText);
-    e.status = res.status;
-    throw e;
-  }
-  return res.json();
 }
 
-async function boot(){
-  state.token = localStorage.getItem('dash_token') || null;
-  if(state.token){
-    try{
-      await authApi('/api/auth/me');
-      document.getElementById('loginGate').classList.remove('show');
-      await initAfterLogin();
-      return;
-    }catch(e){
-      localStorage.removeItem('dash_token');
-      state.token = null;
-    }
-  }
+async function showLoginGate(){
   try{
-    const st = await authApi('/api/auth/status');
+    const st = await fetch('/api/auth/status').then(r=>r.json());
     loginMode = st.has_account ? 'login' : 'register';
   }catch(e){
     loginMode = 'login';
   }
   renderLoginGate();
-}
-
-async function initAfterLogin(){
-  await loadHosts();
-  checkHealth();
-  switchTab('settings');
+  document.getElementById('loginGate').classList.add('show');
 }
 
 let state = {
@@ -785,7 +792,6 @@ let state = {
   activeHostId: null,
   apiUrl: '',
   apiKey: '',
-  token: null,
   currentPath: '',
   editingFilePath: null,
   editingFileOriginal: '',
@@ -1183,15 +1189,18 @@ function triggerDownloadBlob(blob, filename){
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
-// ---------- MULTI-HOST (luu tren server qua /api/config, dang nhap may nao cung thay) ----------
+// ---------- MULTI-HOST (danh sách host lưu trên SERVER qua /api/config, dùng chung mọi thiết bị) ----------
 async function persistHosts(){
+  // localStorage chi la cache de mo lai nhanh, nguon that su la server
+  localStorage.setItem('dash_hosts', JSON.stringify(state.hosts));
+  if(state.activeHostId) localStorage.setItem('dash_active_host', state.activeHostId);
   try{
-    await authApi('/api/config', {
+    await authFetch('/api/config', {
       method: 'PUT',
       body: JSON.stringify({ config: { hosts: state.hosts, activeHostId: state.activeHostId } })
     });
   }catch(e){
-    toast('Lỗi lưu cấu hình lên server: ' + e.message);
+    toast('Không lưu được danh sách host lên server: ' + e.message);
   }
 }
 
@@ -1199,16 +1208,35 @@ function activeHost(){
   return state.hosts.find(h=>h.id===state.activeHostId) || null;
 }
 
-async function loadHosts(){
-  let cfg = {};
-  try{
-    const data = await authApi('/api/config');
-    cfg = data.config || {};
-  }catch(e){
-    toast('Lỗi tải cấu hình: ' + e.message);
+function loadHostsFromLocalStorageMigration(){
+  try{ state.hosts = JSON.parse(localStorage.getItem('dash_hosts') || '[]'); }catch(e){ state.hosts = []; }
+  // migrate du lieu cu (khi chi co 1 host, chua co he thong multi-host)
+  if(state.hosts.length === 0){
+    const oldUrl = localStorage.getItem('dash_api_url');
+    const oldKey = localStorage.getItem('dash_api_key');
+    if(oldUrl){
+      state.hosts.push({id:'h'+Date.now(), name:'Host 1', apiUrl:oldUrl, apiKey:oldKey||''});
+    }
   }
-  state.hosts = cfg.hosts || [];
-  state.activeHostId = cfg.activeHostId || (state.hosts[0] && state.hosts[0].id) || null;
+  state.activeHostId = localStorage.getItem('dash_active_host') || (state.hosts[0] && state.hosts[0].id) || null;
+}
+
+async function loadHosts(){
+  try{
+    const data = await authFetch('/api/config');
+    const cfg = data.config || {};
+    if(Array.isArray(cfg.hosts) && cfg.hosts.length){
+      state.hosts = cfg.hosts;
+      state.activeHostId = cfg.activeHostId || cfg.hosts[0].id;
+    } else {
+      // chua co config tren server (tai khoan moi / lan dau) -> lay tam ban local (neu co) roi day len server
+      loadHostsFromLocalStorageMigration();
+      if(state.hosts.length) await persistHosts();
+    }
+  }catch(e){
+    // offline / loi mang -> dung tam ban cache local de khong bi ket cung
+    loadHostsFromLocalStorageMigration();
+  }
   if(!state.hosts.find(h=>h.id===state.activeHostId)){
     state.activeHostId = state.hosts[0] ? state.hosts[0].id : null;
   }
@@ -2356,8 +2384,14 @@ async function deleteSinglePath(path, name){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
-// init: chờ xác thực xong (boot()) rồi mới tải host/bot/tab, thay vì mở thẳng như trước
-boot();
+// ---------- KHỞI ĐỘNG APP ----------
+async function afterLogin(){
+  await loadHosts();
+  checkHealth();
+  switchTab('settings');
+}
+
+checkExistingSession();
 </script>
 </body>
 </html>
