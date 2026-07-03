@@ -348,6 +348,15 @@
   .env-empty{text-align:center; padding:20px 10px; color:var(--ink-soft); font-size:13px;}
   .env-path-row{display:flex; gap:8px; align-items:flex-end; margin-bottom:14px;}
   .env-path-row .field{flex:1; margin-bottom:0;}
+
+  /* ---- Login gate mode tabs ---- */
+  .login-mode-tabs{display:flex; gap:8px; margin-bottom:16px; background:var(--pink-soft); padding:4px; border-radius:14px;}
+  .login-mode-tabs .lm-btn{
+    flex:1; border:none; background:transparent; padding:10px 8px; border-radius:11px;
+    font-family:'Baloo 2',sans-serif; font-size:13.5px; font-weight:700; color:var(--ink-soft);
+    cursor:pointer; transition:background .15s, color .15s;
+  }
+  .login-mode-tabs .lm-btn.active{background:#fff; color:var(--violet-deep); box-shadow:0 4px 12px -6px rgba(91,33,182,.35);}
 </style>
 </head>
 <body>
@@ -356,6 +365,10 @@
   <div class="modal" style="max-width:340px; border-radius:24px; margin:0 auto;">
     <div class="modal-header">
       <h3 id="loginGateTitle">Đăng nhập</h3>
+    </div>
+    <div class="login-mode-tabs">
+      <button type="button" class="lm-btn" id="lmBtnLogin" onclick="setLoginMode('login')">Đăng nhập</button>
+      <button type="button" class="lm-btn" id="lmBtnRegister" onclick="setLoginMode('register')">Đăng ký</button>
     </div>
     <div class="field">
       <label>Tài khoản</label>
@@ -373,7 +386,6 @@
     <div class="btn-row">
       <button class="btn btn-primary" id="loginGateBtn" onclick="doLoginOrRegister()" style="width:100%; justify-content:center;">Đăng nhập</button>
     </div>
-    <p id="loginGateSwitch" style="font-size:12.5px; color:var(--ink-soft); text-align:center; margin-top:10px; cursor:pointer;"></p>
   </div>
 </div>
 
@@ -661,9 +673,9 @@
 <script>
 // ---------- LOGIN / ĐĂNG KÝ GATE ----------
 // Chỉ chặn UI phía client, không phải bảo mật thật sự (API key backend mới là lớp bảo vệ chính).
-// Mật khẩu được băm bằng SHA-256 trước khi lưu (không lưu plaintext), và phiên đăng nhập tự hết hạn sau 24h.
+// Mật khẩu được băm bằng SHA-256 trước khi lưu (không lưu plaintext).
+// Sau khi đăng nhập/đăng ký 1 lần, phiên được lưu vĩnh viễn trên thiết bị này (chỉ mất khi bấm Đăng xuất).
 let loginMode = 'login'; // 'login' | 'register'
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 async function sha256Hex(text){
   const enc = new TextEncoder().encode(text);
@@ -676,16 +688,22 @@ function hasAccount(){
 }
 
 function isSessionValid(){
-  const exp = parseInt(localStorage.getItem('dash_auth_exp') || '0', 10);
-  return !!exp && Date.now() < exp;
+  return localStorage.getItem('dash_logged_in') === '1';
 }
 
 function startSession(){
-  localStorage.setItem('dash_auth_exp', String(Date.now() + SESSION_TTL_MS));
+  localStorage.setItem('dash_logged_in', '1');
+  localStorage.removeItem('dash_auth_exp'); // don du lieu phien cu (co han) neu co
 }
 
 function endSession(){
+  localStorage.removeItem('dash_logged_in');
   localStorage.removeItem('dash_auth_exp');
+}
+
+function setLoginMode(mode){
+  loginMode = mode;
+  renderLoginGate();
 }
 
 function renderLoginGate(){
@@ -694,14 +712,8 @@ function renderLoginGate(){
   document.getElementById('loginGateBtn').textContent = isRegister ? 'Đăng ký' : 'Đăng nhập';
   document.getElementById('loginPass2Wrap').style.display = isRegister ? 'block' : 'none';
   document.getElementById('loginErr').style.display = 'none';
-  const sw = document.getElementById('loginGateSwitch');
-  if(isRegister){
-    sw.textContent = 'Đã có tài khoản? Đăng nhập';
-    sw.onclick = ()=>{ loginMode='login'; renderLoginGate(); };
-  } else {
-    sw.textContent = hasAccount() ? '' : 'Chưa có tài khoản? Đăng ký';
-    sw.onclick = hasAccount() ? null : (()=>{ loginMode='register'; renderLoginGate(); });
-  }
+  document.getElementById('lmBtnLogin').classList.toggle('active', !isRegister);
+  document.getElementById('lmBtnRegister').classList.toggle('active', isRegister);
 }
 
 async function doLoginOrRegister(){
