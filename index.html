@@ -195,13 +195,18 @@
   }
   .tab.active{color:var(--violet-deep); background:var(--pink-soft);}
   .tab:active{transform:scale(.94);}
-  .tab .ic{font-size:18px; transition:transform .15s;}
-  .tab.active .ic{transform:scale(1.12);}
+  .tab .ic{font-size:18px;}
   .tab .ic-svg{color:var(--ink-soft); display:flex; align-items:center; justify-content:center;}
   .tab.active .ic-svg{color:var(--violet-deep);}
 
   .view{display:none;}
-  .view.active{display:block; animation:fadeInUp .25s ease-out both;}
+  .view.active{display:block; animation:fadeInUp .32s cubic-bezier(.22,.8,.32,1) both;}
+  .view.leaving{display:block; animation:fadeOutDown .18s ease-in both;}
+  @keyframes fadeOutDown{from{opacity:1; transform:translateY(0);} to{opacity:0; transform:translateY(6px);}}
+  .tab{transition:background .25s cubic-bezier(.22,.8,.32,1), color .25s, transform .15s;}
+  .tab .ic, .tab .ic-svg svg{transition:transform .25s cubic-bezier(.34,1.56,.64,1);}
+  .tab.active .ic, .tab.active .ic-svg svg{transform:scale(1.15);}
+  .card{transition:box-shadow .2s, transform .15s;}
 
   .toast{
     position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
@@ -621,6 +626,7 @@ let state = {
   search: { query: '', matches: [], current: -1 },
   env: { path: '.env', rows: [] }, // rows: [{key, value, visible, id}]
   sharingPaths: null,
+  loadedOnce: { files:false, sync:false, settings:false },
 };
 
 function toast(msg){
@@ -631,17 +637,44 @@ function toast(msg){
 }
 
 function switchTab(name){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  const prevView = document.querySelector('.view.active');
+  const nextView = document.getElementById('view-'+name);
+  if(prevView === nextView) return;
+
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('view-'+name).classList.add('active');
   document.querySelector(`.tab[data-view="${name}"]`).classList.add('active');
+
+  if(prevView){
+    prevView.classList.add('leaving');
+    prevView.classList.remove('active');
+    setTimeout(()=>prevView.classList.remove('leaving'), 200);
+  }
+  // retrigger animation ke ca da xem qua
+  nextView.classList.remove('active');
+  void nextView.offsetWidth;
+  nextView.classList.add('active');
+
   if(name!=='files'){ cancelSelection(); }
-  if(name==='files') loadFiles(state.currentPath);
-  if(name==='settings') refreshBotStatus();
-  if(name==='sync') populateSyncSelects();
+
+  // lazy load: chi fetch lan dau vao tab, cac lan sau dung du lieu cu (co the bam nut refresh rieng)
+  if(name==='files' && !state.loadedOnce.files){ state.loadedOnce.files = true; loadFiles(state.currentPath); }
+  if(name==='settings' && !state.loadedOnce.settings){ state.loadedOnce.settings = true; refreshBotStatus(); loadEnv(); }
+  else if(name==='settings'){ refreshBotStatus(); }
+  if(name==='sync' && !state.loadedOnce.sync){ state.loadedOnce.sync = true; populateSyncSelects(); }
+
   stopBotStatusPolling();
   if(name==='settings') startBotStatusPolling();
 }
+
+// tam dung polling khi app bi an (chuyen tab trinh duyet / khoa man hinh) de tiet kiem tai nguyen
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    stopBotStatusPolling();
+  } else {
+    const activeView = document.querySelector('.view.active');
+    if(activeView && activeView.id === 'view-settings') startBotStatusPolling();
+  }
+});
 
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 function openModal(id){ document.getElementById(id).classList.add('show'); }
@@ -2038,7 +2071,6 @@ async function deleteSinglePath(path, name){
 loadHosts();
 checkHealth();
 switchTab('settings');
-loadEnv();
 </script>
 </body>
 </html>
