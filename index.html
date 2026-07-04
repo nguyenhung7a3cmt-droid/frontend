@@ -354,6 +354,41 @@
     cursor:pointer; transition:background .15s, color .15s;
   }
   .login-mode-tabs .lm-btn.active{background:#fff; color:var(--violet-deep); box-shadow:0 4px 12px -6px rgba(91,33,182,.35);}
+
+  .export-panel-bg{
+    position:fixed; inset:0; background:rgba(36,26,51,0); z-index:70; display:none;
+    transition:background .2s;
+  }
+  .export-panel-bg.show{display:block; background:rgba(36,26,51,.35);}
+  .export-panel{
+    position:fixed; top:0; right:0; bottom:0; width:100%; max-width:440px;
+    background:#fff; z-index:71; box-shadow:-16px 0 40px -20px rgba(36,26,51,.5);
+    transform:translateX(100%); transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    display:flex; flex-direction:column;
+  }
+  .export-panel.show{transform:translateX(0);}
+  .export-panel-header{
+    padding:16px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+  }
+  .export-panel-header h3{font-size:15px; color:var(--ink); text-transform:none; letter-spacing:0;}
+  .export-panel-body{flex:1; overflow-y:auto; padding:12px 16px;}
+  .export-section{margin-bottom:16px; border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+  .export-section-head{
+    display:flex; align-items:center; justify-content:space-between; padding:9px 12px; gap:8px;
+    background:var(--pink-soft); font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--violet-deep); font-weight:700;
+  }
+  .export-section-head span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .export-section-head .btn{padding:5px 9px; font-size:11px; flex-shrink:0;}
+  .export-section pre{
+    margin:0; padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:11.5px; line-height:1.5;
+    white-space:pre-wrap; word-break:break-all; max-height:260px; overflow-y:auto; background:#fff;
+  }
+  .export-panel-footer{padding:12px 16px; border-top:1px solid var(--line); flex-shrink:0; display:flex; gap:8px;}
+  .export-panel-footer .btn{flex:1; justify-content:center;}
+  .export-skip-note{font-size:11.5px; color:var(--ink-soft); padding:0 16px 8px; flex-shrink:0;}
+  @media (max-width:480px){
+    .export-panel{max-width:100%;}
+  }
 </style>
 </head>
 <body>
@@ -554,6 +589,7 @@
   <span class="sel-count" id="selCount">0 đã chọn</span>
   <div class="sel-actions">
     <button class="btn btn-primary" onclick="downloadSelected()">⬇ Tải xuống</button>
+    <button class="btn btn-ghost" onclick="exportSelectedContent()">📋 Xuất nội dung</button>
     <button class="btn btn-ghost" onclick="shareSelected()">🔗 Chia sẻ</button>
     <button class="btn btn-danger" onclick="deleteSelected()">🗑 Xóa</button>
     <button class="btn btn-ghost" onclick="cancelSelection()">Hủy</button>
@@ -657,6 +693,20 @@
 </div>
 
 <div class="ctx-menu" id="ctxMenu"></div>
+
+<div class="export-panel-bg" id="exportPanelBg"></div>
+<div class="export-panel" id="exportPanel">
+  <div class="export-panel-header">
+    <h3 id="exportPanelTitle">Xuất nội dung</h3>
+    <span class="close-x" onclick="closeExportPanel()">✕</span>
+  </div>
+  <div class="export-skip-note" id="exportSkipNote" style="display:none;"></div>
+  <div class="export-panel-body" id="exportPanelBody"><div class="empty">Đang tải nội dung…</div></div>
+  <div class="export-panel-footer">
+    <button class="btn btn-primary" onclick="copyAllExport()">📋 Copy tất cả</button>
+    <button class="btn btn-ghost" onclick="closeExportPanel()">Đóng</button>
+  </div>
+</div>
 
 <script>
 const AUTH_BASE = 'https://quanly.freesrv.com';
@@ -2341,6 +2391,114 @@ async function deleteSinglePath(path, name){
     }
     loadFiles(state.currentPath);
   }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
+let _exportSections = [];
+
+function openExportPanel(){
+  document.getElementById('exportPanelBg').classList.add('show');
+  document.getElementById('exportPanel').classList.add('show');
+}
+
+function closeExportPanel(){
+  document.getElementById('exportPanelBg').classList.remove('show');
+  document.getElementById('exportPanel').classList.remove('show');
+}
+
+document.getElementById('exportPanelBg').addEventListener('mousedown', function(e){
+  if(e.target === this) closeExportPanel();
+});
+
+async function exportSelectedContent(){
+  if(state.selectedFiles.size === 0){ toast('Chưa chọn file nào'); return; }
+  const paths = [...state.selectedFiles];
+
+  const knownItems = [...(state.lastFileItems || []), ...(state.deepSearchResults || [])];
+  const files = [];
+  const skippedDirs = [];
+  paths.forEach(p=>{
+    const it = knownItems.find(x=>x.path === p);
+    if(it && it.is_dir) skippedDirs.push(p);
+    else files.push(p);
+  });
+
+  if(files.length === 0){
+    toast('Chỉ chọn thư mục, không có file nào để xuất nội dung');
+    return;
+  }
+
+  document.getElementById('exportPanelTitle').textContent = `Xuất nội dung (${files.length} file)`;
+  const skipNote = document.getElementById('exportSkipNote');
+  if(skippedDirs.length){
+    skipNote.style.display = 'block';
+    skipNote.textContent = `Đã bỏ qua ${skippedDirs.length} thư mục (chỉ xuất được nội dung file).`;
+  } else {
+    skipNote.style.display = 'none';
+  }
+
+  const body = document.getElementById('exportPanelBody');
+  body.innerHTML = '<div class="empty">Đang tải nội dung…</div>';
+  openExportPanel();
+
+  const results = await Promise.all(files.map(async p=>{
+    try{
+      const data = await api('/api/files/content?path=' + encodeURIComponent(p));
+      return {path: p, content: data.content, error: null};
+    }catch(e){
+      return {path: p, content: '', error: e.message};
+    }
+  }));
+  _exportSections = results;
+  renderExportPanel();
+}
+
+function renderExportPanel(){
+  const body = document.getElementById('exportPanelBody');
+  if(_exportSections.length === 0){
+    body.innerHTML = '<div class="empty">Không có file nào để xuất</div>';
+    return;
+  }
+  body.innerHTML = _exportSections.map((s, idx)=>{
+    if(s.error){
+      return `<div class="export-section">
+        <div class="export-section-head"><span title="${escapeHtml(s.path)}">${escapeHtml(s.path)}</span></div>
+        <pre style="color:var(--danger);">Lỗi tải file: ${escapeHtml(s.error)}</pre>
+      </div>`;
+    }
+    return `<div class="export-section">
+      <div class="export-section-head">
+        <span title="${escapeHtml(s.path)}">${escapeHtml(s.path)}</span>
+        <button class="btn btn-ghost btn-sm" onclick="copyExportSection(${idx})">📋 Copy</button>
+      </div>
+      <pre>${escapeHtml(s.content)}</pre>
+    </div>`;
+  }).join('');
+}
+
+function buildExportText(sections){
+  return sections.map(s=>{
+    const header = `===== ${s.path} =====`;
+    const content = s.error ? `[Lỗi tải file: ${s.error}]` : s.content;
+    return header + '\n' + content;
+  }).join('\n\n');
+}
+
+async function copyExportSection(idx){
+  const s = _exportSections[idx];
+  if(!s) return;
+  try{
+    await navigator.clipboard.writeText(s.error ? '' : s.content);
+    toast('Đã copy ' + s.path + ' ✓');
+  }catch(e){ toast('Không copy được: ' + e.message); }
+}
+
+async function copyAllExport(){
+  if(_exportSections.length === 0){ toast('Chưa có nội dung'); return; }
+  const text = buildExportText(_exportSections);
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('Đã copy toàn bộ ✓ (' + _exportSections.length + ' file)');
+  }catch(e){ toast('Không copy được: ' + e.message); }
 }
 
 async function afterLogin(){
