@@ -171,7 +171,6 @@
   }
   .toggle.on .knob{left:21px;}
 
-  /* toolbar (nút chọn/thêm file + search + breadcrumb) dính lại khi cuộn danh sách file dài */
   .file-toolbar-sticky{
     position:sticky; top:0; z-index:5; background:#fff;
     margin:0 -16px; padding:0 16px 10px; border-bottom:1px solid var(--line);
@@ -338,7 +337,6 @@
   .meter-label{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft);}
   .meter-label b{color:var(--ink); font-weight:600;}
 
-  /* ---- Env (.env) editor ---- */
   .env-row{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
   .env-row .env-key{flex:0 0 38%; font-family:'JetBrains Mono',monospace; font-size:12.5px;}
   .env-row .env-value-wrap{flex:1; position:relative;}
@@ -349,7 +347,6 @@
   .env-path-row{display:flex; gap:8px; align-items:flex-end; margin-bottom:14px;}
   .env-path-row .field{flex:1; margin-bottom:0;}
 
-  /* ---- Login gate mode tabs ---- */
   .login-mode-tabs{display:flex; gap:8px; margin-bottom:16px; background:var(--pink-soft); padding:4px; border-radius:14px;}
   .login-mode-tabs .lm-btn{
     flex:1; border:none; background:transparent; padding:10px 8px; border-radius:11px;
@@ -397,7 +394,6 @@
 
 <div class="container">
 
-  <!-- FILES VIEW -->
   <div class="view" id="view-files">
     <div class="card">
       <h3>Thư mục file</h3>
@@ -422,7 +418,6 @@
     </div>
   </div>
 
-  <!-- SETTINGS VIEW -->
   <div class="view active" id="view-settings">
     <div class="card">
       <h3>Kết nối server</h3>
@@ -513,7 +508,6 @@
     </div>
   </div>
 
-  <!-- SYNC VIEW -->
   <div class="view" id="view-sync">
     <div class="card">
       <h3>Đồng bộ code giữa 2 host</h3>
@@ -566,7 +560,6 @@
   </div>
 </div>
 
-<!-- File editor modal -->
 <div class="modal-bg" id="fileModalBg">
   <div class="modal" id="fileModalPanel">
     <div class="modal-drag-handle" id="fileModalDragHandle" title="Kéo để chỉnh độ cao"></div>
@@ -596,9 +589,6 @@
   </div>
 </div>
 
-
-<!-- Rename modal -->
-<!-- Custom confirm modal -->
 <div class="modal-bg small-modal" id="confirmModalBg">
   <div class="modal">
     <div class="modal-header">
@@ -630,8 +620,6 @@
   </div>
 </div>
 
-<!-- Share link modal -->
-<!-- Diff view modal -->
 <div class="modal-bg" id="diffModalBg">
   <div class="modal">
     <div class="modal-header">
@@ -671,25 +659,42 @@
 <div class="ctx-menu" id="ctxMenu"></div>
 
 <script>
-// ---------- CONFIG: dia chi backend that su cho auth/config (dashboard nay dang host tinh tren GitHub Pages,
-// khac origin voi backend, nen KHONG the dung relative URL '/api/...' duoc nua) ----------
 const AUTH_BASE = 'https://quanly.freesrv.com';
 
 function resolveAuthBase(){
   let url = AUTH_BASE.replace(/\/$/,'');
-  // neu trang dang chay https (vd GitHub Pages) ma AUTH_BASE lo la http:// thi nang cap len https
-  // de tranh bi trinh duyet chan do mixed-content.
   if(location.protocol === 'https:' && url.startsWith('http://')){
     url = 'https://' + url.slice(7);
   }
   return url;
 }
 
-// ---------- LOGIN / ĐĂNG KÝ GATE (server-side, dung chung /api/auth/*) ----------
-// Xac thuc that su nam o server (dashboard_api.py): mat khau duoc bam PBKDF2 + luu
-// tren server, dang nhap tra ve 1 session token (Bearer) luu trong localStorage cua
-// thiet bi nay. Khong con luu tai khoan/mat khau (hay hash) o phia trinh duyet nua.
-let loginMode = 'login'; // 'login' | 'register'
+let loginMode = 'login';
+let authToken = localStorage.getItem('dash_session_token') || '';
+
+function authHeaders(){
+  return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
+}
+
+async function authFetch(path, options={}){
+  const headers = { ...(options.headers||{}), ...authHeaders() };
+  if(options.body !== undefined && !(options.body instanceof FormData)){
+    headers['Content-Type'] = 'application/json';
+  }
+  let res;
+  try{
+    res = await fetch(resolveAuthBase() + path, { ...options, headers });
+  }catch(e){
+    throw new Error('Không kết nối được tới server dashboard');
+  }
+  if(!res.ok){
+    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
+    const e = new Error(err.detail || res.statusText);
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
+}
 
 function setLoginMode(mode){
   loginMode = mode;
@@ -711,7 +716,6 @@ async function doLoginOrRegister(){
   const p = document.getElementById('loginPass').value;
   const errEl = document.getElementById('loginErr');
   const btn = document.getElementById('loginGateBtn');
-  errEl.style.display = 'none';
   if(!u || !p){ errEl.textContent = 'Nhập đủ tài khoản và mật khẩu'; errEl.style.display='block'; return; }
 
   if(loginMode === 'register'){
@@ -721,15 +725,19 @@ async function doLoginOrRegister(){
   }
 
   btn.disabled = true;
+  errEl.style.display = 'none';
   try{
     const path = loginMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-    const data = await authApi(path, { method:'POST', body: JSON.stringify({username:u, password:p}) });
-    state.token = data.token;
-    localStorage.setItem('dash_token', data.token);
+    const data = await authFetch(path, {
+      method: 'POST',
+      body: JSON.stringify({ username: u, password: p })
+    });
+    authToken = data.token;
+    localStorage.setItem('dash_session_token', authToken);
     document.getElementById('loginGate').classList.remove('show');
-    await initAfterLogin();
+    await afterLogin();
   }catch(e){
-    errEl.textContent = e.message || 'Có lỗi xảy ra';
+    errEl.textContent = e.message || 'Lỗi đăng nhập';
     errEl.style.display = 'block';
   }finally{
     btn.disabled = false;
@@ -738,61 +746,36 @@ async function doLoginOrRegister(){
 
 async function doLogout(){
   if(!confirm('Đăng xuất khỏi dashboard?')) return;
-  try{ await authApi('/api/auth/logout', {method:'POST'}); }catch(e){}
-  localStorage.removeItem('dash_token');
+  try{ await authFetch('/api/auth/logout', {method:'POST'}); }catch(e){ }
+  localStorage.removeItem('dash_session_token');
   location.reload();
 }
 
-// Goi cac endpoint auth/config: LUON goi ve AUTH_BASE (backend that su), khong con dung
-// relative URL nua vi trang dashboard co the dang duoc host tren mot origin khac (vd GitHub Pages).
-// Khac voi api()/apiRaw() von goi ve API cua tung HOST rieng (X-API-Key, apiUrl khac nhau).
-async function authApi(path, options={}){
-  const headers = { ...(options.headers||{}) };
-  if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
-  if(!(options.body instanceof FormData) && options.body !== undefined){
-    headers['Content-Type'] = 'application/json';
+async function checkExistingSession(){
+  if(!authToken){
+    await showLoginGate();
+    return;
   }
-  let res;
   try{
-    res = await fetch(resolveAuthBase() + path, { ...options, headers });
+    await authFetch('/api/auth/me');
+    document.getElementById('loginGate').classList.remove('show');
+    await afterLogin();
   }catch(e){
-    throw new Error('Không kết nối được tới server dashboard');
+    localStorage.removeItem('dash_session_token');
+    authToken = '';
+    await showLoginGate();
   }
-  if(!res.ok){
-    const err = await res.clone().json().catch(()=>({detail:'Lỗi không xác định'}));
-    const e = new Error(err.detail || res.statusText);
-    e.status = res.status;
-    throw e;
-  }
-  return res.json();
 }
 
-async function boot(){
-  state.token = localStorage.getItem('dash_token') || null;
-  if(state.token){
-    try{
-      await authApi('/api/auth/me');
-      document.getElementById('loginGate').classList.remove('show');
-      await initAfterLogin();
-      return;
-    }catch(e){
-      localStorage.removeItem('dash_token');
-      state.token = null;
-    }
-  }
+async function showLoginGate(){
   try{
-    const st = await authApi('/api/auth/status');
+    const st = await fetch(resolveAuthBase() + '/api/auth/status').then(r=>r.json());
     loginMode = st.has_account ? 'login' : 'register';
   }catch(e){
     loginMode = 'login';
   }
   renderLoginGate();
-}
-
-async function initAfterLogin(){
-  await loadHosts();
-  checkHealth();
-  switchTab('settings');
+  document.getElementById('loginGate').classList.add('show');
 }
 
 let state = {
@@ -800,7 +783,6 @@ let state = {
   activeHostId: null,
   apiUrl: '',
   apiKey: '',
-  token: null,
   currentPath: '',
   editingFilePath: null,
   editingFileOriginal: '',
@@ -812,7 +794,7 @@ let state = {
   ctxItem: null,
   authBlocked: false,
   search: { query: '', matches: [], current: -1 },
-  env: { path: '.env', rows: [] }, // rows: [{key, value, visible, id}]
+  env: { path: '.env', rows: [] },
   sharingPaths: null,
   loadedOnce: { files:false, sync:false, settings:false },
 };
@@ -837,14 +819,12 @@ function switchTab(name){
     prevView.classList.remove('active');
     setTimeout(()=>prevView.classList.remove('leaving'), 200);
   }
-  // retrigger animation ke ca da xem qua
   nextView.classList.remove('active');
   void nextView.offsetWidth;
   nextView.classList.add('active');
 
   if(name!=='files'){ cancelSelection(); }
 
-  // lazy load: chi fetch lan dau vao tab, cac lan sau dung du lieu cu (co the bam nut refresh rieng)
   if(name==='files' && !state.loadedOnce.files){ state.loadedOnce.files = true; loadFiles(state.currentPath); }
   if(name==='settings' && !state.loadedOnce.settings){ state.loadedOnce.settings = true; refreshBotStatus(); loadEnv(); }
   else if(name==='settings'){ refreshBotStatus(); }
@@ -854,7 +834,6 @@ function switchTab(name){
   if(name==='settings') startBotStatusPolling();
 }
 
-// tam dung polling khi app bi an (chuyen tab trinh duyet / khoa man hinh) de tiet kiem tai nguyen
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){
     stopBotStatusPolling();
@@ -867,16 +846,14 @@ document.addEventListener('visibilitychange', ()=>{
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 function openModal(id){ document.getElementById(id).classList.add('show'); }
 
-// Bam ra ngoai modal (vao phan nen mo) = giong bam nut X
 document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('mousedown', function(e){
-    if(e.target !== bg) return; // chi tinh khi bam dung phan nen, khong tinh khi bam trong .modal
+    if(e.target !== bg) return;
     if(bg.id === 'fileModalBg') requestCloseFileModal();
     else closeModal(bg.id);
   });
 });
 
-// Tab key trong textarea chèn tab thay vì đổi focus
 function wireTabKey(textareaId){
   const ta = document.getElementById(textareaId);
   if(!ta || ta._tabWired) return;
@@ -921,7 +898,6 @@ function wireGutter(textareaId, gutterId){
     gutter.scrollTop = ta.scrollTop;
   }
   function update(){
-    // debounce qua requestAnimationFrame de khong rebuild lien tuc khi go nhanh tren file dai (vd 10k dong)
     if(rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(()=>{ rafId = null; buildNow(); });
   }
@@ -935,12 +911,10 @@ function wireGutter(textareaId, gutterId){
 }
 wireGutter('fileEditor', 'fileEditorGutter');
 
-// ---------- TÌM KIẾM TRONG FILE EDITOR (thay Ctrl+F mặc định) ----------
 function escapeHtmlForHighlight(s){
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Tim tat ca vi tri khop (khong phan biet hoa/thuong), ho tro chuoi nhieu dong
 function computeMatches(text, query){
   const matches = [];
   if(!query) return matches;
@@ -1003,13 +977,10 @@ function selectCurrentMatch(){
   const ta = document.getElementById('fileEditor');
   const m = state.search.matches[state.search.current];
   if(!m) return;
-  // KHONG goi ta.focus() o day, neu khong se cuop focus khoi o tim kiem
-  // khien nguoi dung go tiep se bi go nham vao code thay vi vao o tim.
   ta.setSelectionRange(m.start, m.end);
   requestAnimationFrame(scrollMatchIntoView);
 }
 
-// keepPosition=true: dung khi noi dung file vua thay doi (dang go), khong nhay ve match dau
 function runSearch(query, opts={}){
   const ta = document.getElementById('fileEditor');
   state.search.query = query;
@@ -1075,7 +1046,7 @@ const findInputEl = document.getElementById('findInput');
 findInputEl.addEventListener('input', (e)=>{ runSearch(e.target.value); });
 findInputEl.addEventListener('keydown', (e)=>{
   if(e.key === 'Enter'){
-    e.preventDefault(); // khong cho xuong dong khi go Enter, danh Enter cho tim tiep/lui
+    e.preventDefault();
     if(e.shiftKey) findPrev(); else findNext();
   } else if(e.key === 'Escape'){
     e.preventDefault();
@@ -1087,7 +1058,7 @@ const fileEditorEl = document.getElementById('fileEditor');
 fileEditorEl.addEventListener('keydown', function(e){
   const isCtrlF = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F');
   if(isCtrlF){
-    e.preventDefault(); // chan Ctrl+F mac dinh cua trinh duyet (voi lai no cung khong tim duoc trong textarea)
+    e.preventDefault();
     openFindBar();
   } else if(e.key === 'Escape' && document.getElementById('findBar').classList.contains('show')){
     e.preventDefault();
@@ -1096,7 +1067,6 @@ fileEditorEl.addEventListener('keydown', function(e){
 });
 fileEditorEl.addEventListener('scroll', syncBackdropScroll);
 fileEditorEl.addEventListener('input', ()=>{
-  // neu dang tim va noi dung thay doi (vd vua sua code), tinh lai match de overlay khong bi lech
   if(document.getElementById('findBar').classList.contains('show') && state.search.query){
     runSearch(state.search.query, {keepPosition:true});
   } else {
@@ -1104,7 +1074,6 @@ fileEditorEl.addEventListener('input', ()=>{
   }
 });
 
-// ---------- KÉO RESIZE MODAL SỬA FILE ----------
 (function(){
   const handle = document.getElementById('fileModalDragHandle');
   const panel = document.getElementById('fileModalPanel');
@@ -1120,7 +1089,7 @@ fileEditorEl.addEventListener('input', ()=>{
   }
   function onPointerMove(e){
     if(!dragging) return;
-    const delta = startY - e.clientY; // keo len tren -> tang chieu cao modal
+    const delta = startY - e.clientY;
     const minH = 320;
     const maxH = window.innerHeight * 0.94;
     let newHeight = startHeight + delta;
@@ -1140,7 +1109,6 @@ fileEditorEl.addEventListener('input', ()=>{
   handle.addEventListener('pointercancel', onPointerUp);
 })();
 
-// Cảnh báo mất thay đổi chưa lưu khi đóng file editor
 document.getElementById('fileEditor').addEventListener('input', ()=>{
   const dirty = document.getElementById('fileEditor').value !== state.editingFileOriginal;
   document.getElementById('fileDirtyDot').style.display = dirty ? 'inline-block' : 'none';
@@ -1198,15 +1166,16 @@ function triggerDownloadBlob(blob, filename){
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
-// ---------- MULTI-HOST (luu tren server qua /api/config, dang nhap may nao cung thay) ----------
 async function persistHosts(){
+  localStorage.setItem('dash_hosts', JSON.stringify(state.hosts));
+  if(state.activeHostId) localStorage.setItem('dash_active_host', state.activeHostId);
   try{
-    await authApi('/api/config', {
+    await authFetch('/api/config', {
       method: 'PUT',
       body: JSON.stringify({ config: { hosts: state.hosts, activeHostId: state.activeHostId } })
     });
   }catch(e){
-    toast('Lỗi lưu cấu hình lên server: ' + e.message);
+    toast('Không lưu được danh sách host lên server: ' + e.message);
   }
 }
 
@@ -1214,16 +1183,32 @@ function activeHost(){
   return state.hosts.find(h=>h.id===state.activeHostId) || null;
 }
 
-async function loadHosts(){
-  let cfg = {};
-  try{
-    const data = await authApi('/api/config');
-    cfg = data.config || {};
-  }catch(e){
-    toast('Lỗi tải cấu hình: ' + e.message);
+function loadHostsFromLocalStorageMigration(){
+  try{ state.hosts = JSON.parse(localStorage.getItem('dash_hosts') || '[]'); }catch(e){ state.hosts = []; }
+  if(state.hosts.length === 0){
+    const oldUrl = localStorage.getItem('dash_api_url');
+    const oldKey = localStorage.getItem('dash_api_key');
+    if(oldUrl){
+      state.hosts.push({id:'h'+Date.now(), name:'Host 1', apiUrl:oldUrl, apiKey:oldKey||''});
+    }
   }
-  state.hosts = cfg.hosts || [];
-  state.activeHostId = cfg.activeHostId || (state.hosts[0] && state.hosts[0].id) || null;
+  state.activeHostId = localStorage.getItem('dash_active_host') || (state.hosts[0] && state.hosts[0].id) || null;
+}
+
+async function loadHosts(){
+  try{
+    const data = await authFetch('/api/config');
+    const cfg = data.config || {};
+    if(Array.isArray(cfg.hosts) && cfg.hosts.length){
+      state.hosts = cfg.hosts;
+      state.activeHostId = cfg.activeHostId || cfg.hosts[0].id;
+    } else {
+      loadHostsFromLocalStorageMigration();
+      if(state.hosts.length) await persistHosts();
+    }
+  }catch(e){
+    loadHostsFromLocalStorageMigration();
+  }
   if(!state.hosts.find(h=>h.id===state.activeHostId)){
     state.activeHostId = state.hosts[0] ? state.hosts[0].id : null;
   }
@@ -1335,7 +1320,6 @@ async function restartServer(){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
-// ---------- BOT START/STOP ----------
 let _botPollTimer = null;
 const BOT_STATUS_MAP = {
   running:  {label:'🟢 Bot đang chạy',      off:false},
@@ -1515,7 +1499,6 @@ async function restartBot(){
   }
 }
 
-// ---------- ENV (.env) EDITOR ----------
 let _envRowSeq = 0;
 
 async function loadEnv(){
@@ -1610,7 +1593,6 @@ async function checkHealth(){
   }
 }
 
-// ---------- FILES ----------
 const FILE_ICONS = {'.py':'🐍','.lua':'🌙','.json':'🧩','.md':'📝','.txt':'📄','.env':'🔐','.yaml':'⚙️','.yml':'⚙️'};
 
 function toggleFileSearch(){
@@ -1686,7 +1668,7 @@ async function doDeepFileSearch(q){
   list.innerHTML = '<div class="empty">Đang tìm trong toàn bộ thư mục...</div>';
   try{
     const all = await listAllFilesFlat('');
-    if(token !== _fileSearchToken) return; // co query moi hon, bo ket qua cu
+    if(token !== _fileSearchToken) return;
     const ql = q.toLowerCase();
     state.deepSearchResults = all.filter(it => it.name.toLowerCase().includes(ql) || it.path.toLowerCase().includes(ql));
     renderFileList();
@@ -1881,7 +1863,6 @@ async function uploadFiles(files){
   loadFiles(state.currentPath);
 }
 
-// ---------- DRAG & DROP ----------
 (function setupDragDrop(){
   const zone = document.getElementById('view-files');
   if(!zone) return;
@@ -1958,8 +1939,6 @@ async function confirmRename(){
 }
 
 async function openFile(path){
-  // mo modal ngay lap tuc (khong cho fetch xong moi mo) de cam giac nhanh hon,
-  // vua fetch vua hien loading trong textarea.
   state.editingFilePath = path;
   state.editingFileOriginal = '';
   document.getElementById('fileModalTitle').firstChild.textContent = path.split('/').pop();
@@ -1973,7 +1952,7 @@ async function openFile(path){
   openModal('fileModalBg');
   try{
     const data = await api('/api/files/content?path=' + encodeURIComponent(path));
-    if(state.editingFilePath !== path) return; // user da mo file khac trong luc cho
+    if(state.editingFilePath !== path) return;
     state.editingFileOriginal = data.content;
     editor.value = data.content;
     editor.disabled = false;
@@ -2000,14 +1979,12 @@ async function saveFile(){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
-// ---------- SHARE LINK ----------
 function openShareModalForEditingFile(){
   if(!state.editingFilePath){ toast('Chưa mở file nào'); return; }
   openShareModal([state.editingFilePath]);
 }
 
 function shareCurrentFolder(){
-  // '' (root) hoac state.currentPath deu duoc - se share ca thu muc do (de quy)
   openShareModal([state.currentPath || '']);
 }
 
@@ -2049,16 +2026,12 @@ async function copyShareLink(){
   }
 }
 
-// ---------- CONTEXT MENU (right-click / long-press) ----------
-// Gan len ca view-files (khong chi fileList) de bat duoc click vao khoang trong
-// ngoai cac dong file, tranh hien menu chuot phai mac dinh cua trinh duyet.
 document.addEventListener('contextmenu', function(e){
-  if(e.target.closest('#view-files')) return; // da xu ly rieng o duoi
-  if(e.target.closest('input, textarea')) return; // giu menu goc de Copy/Paste
+  if(e.target.closest('#view-files')) return;
+  if(e.target.closest('input, textarea')) return;
   e.preventDefault();
 });
 
-// ---------- SYNC 2 HOST ----------
 const SYNC_EXT_OK = new Set(['.py','.json','.lua','.txt','.md','.env','.cfg','.yaml','.yml']);
 
 function populateSyncSelects(){
@@ -2264,7 +2237,6 @@ function positionCtxMenu(menu, e){
   menu.style.top = y + 'px';
   menu.classList.add('show');
 
-  // sau khi render mới biet kich thuoc thuc, clamp lai trong man hinh
   requestAnimationFrame(()=>{
     const rect = menu.getBoundingClientRect();
     let left = x, top = y;
@@ -2371,8 +2343,13 @@ async function deleteSinglePath(path, name){
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
-// init: chờ xác thực xong (boot()) rồi mới tải host/bot/tab, thay vì mở thẳng như trước
-boot();
+async function afterLogin(){
+  await loadHosts();
+  checkHealth();
+  switchTab('settings');
+}
+
+checkExistingSession();
 </script>
 </body>
 </html>
