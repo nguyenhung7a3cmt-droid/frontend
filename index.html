@@ -309,6 +309,7 @@
 
   #fileModalBg .modal{
     display:flex; flex-direction:column; height:70vh; max-height:94vh; min-height:320px;
+    position:relative;
   }
   #fileModalBg .modal-header{flex-shrink:0;}
   #fileModalBg .field{flex:1; min-height:0; display:flex; flex-direction:column; margin-bottom:8px;}
@@ -317,10 +318,14 @@
   #fileModalBg .btn-row{flex-shrink:0;}
 
   .find-bar{
-    display:none; align-items:center; gap:6px; background:var(--pink-soft); border:1.5px solid var(--line);
-    border-radius:12px; padding:6px 8px; margin-bottom:10px; flex-shrink:0;
+    display:none; align-items:center; gap:6px; background:#fff; border:1.5px solid var(--line);
+    border-radius:12px; padding:6px 8px; flex-shrink:0;
+    position:absolute; top:10px; right:10px; left:auto; z-index:20;
+    width:auto; max-width:min(320px, calc(100% - 20px));
+    box-shadow:0 8px 24px -10px rgba(36,26,51,.4);
   }
   .find-bar.show{display:flex;}
+  .find-bar textarea{ width:180px; flex:none; }
   .find-bar input{flex:1; background:#fff; padding:8px 10px;}
   .find-bar .find-count{font-size:12px; color:var(--ink-soft); white-space:nowrap; flex-shrink:0; min-width:44px; text-align:center;}
   .find-bar .icon-btn{flex-shrink:0;}
@@ -328,6 +333,11 @@
     font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.4; min-height:auto;
     height:38px; max-height:96px; resize:none; overflow-y:auto; white-space:pre; padding:8px 10px;
   }
+  #ghFindInput{
+    font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.4; min-height:auto;
+    height:38px; max-height:96px; resize:none; overflow-y:auto; white-space:pre; padding:8px 10px;
+  }
+  
   .host-row .field{flex:1; margin-bottom:0;}
 
   .meter{background:var(--pink-soft); border-radius:99px; height:8px; overflow:hidden; margin-top:6px;}
@@ -739,7 +749,7 @@
 </div>
 
 <div class="modal-bg" id="ghModalBg">
-  <div class="modal" style="max-height:90vh; height:80vh; display:flex; flex-direction:column;">
+  <div class="modal" style="max-height:90vh; height:80vh; display:flex; flex-direction:column; position:relative;">
     <div class="modal-header">
       <h3 id="ghModalTitle">index.html<span class="dirty-dot" id="ghDirtyDot" style="display:none;"></span></h3>
       <span class="close-x" onclick="closeGhModal()">✕</span>
@@ -2861,7 +2871,12 @@ async function afterLogin(){
   switchTab('settings');
 }
 
-checkExistingSession();
+document.addEventListener('keydown', function(e){
+  const isCtrlF = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F');
+  if(isCtrlF){
+    e.preventDefault();
+  }
+}, true);
 </script>
 </body>
 </html>
