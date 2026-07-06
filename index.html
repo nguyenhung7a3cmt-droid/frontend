@@ -579,6 +579,13 @@
     </div>
   </div>
 
+  <div class="view" id="view-frontend">
+    <div class="card">
+      <h3>Sửa Frontend (GitHub)</h3>
+      <div id="ghFileList"><div class="empty">Đang tải…</div></div>
+    </div>
+  </div>
+
   <div class="view" id="view-sync">
     <div class="card">
       <h3>Đồng bộ code giữa 2 host</h3>
@@ -613,9 +620,8 @@
     <span class="ic ic-svg">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-        <path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-      </svg>
-    </span>Đồng bộ
+  <div class="tab" data-view="frontend" onclick="switchTab('frontend')">
+    <span class="ic">🌐</span>Frontend
   </div>
 </div>
 
@@ -883,7 +889,7 @@ let state = {
   search: { query: '', matches: [], current: -1 },
   env: { path: '.env', rows: [] },
   sharingPaths: null,
-  loadedOnce: { files:false, sync:false, settings:false },
+  loadedOnce: { files:false, sync:false, settings:false, frontend:false },
 };
 
 function toast(msg){
@@ -915,7 +921,7 @@ function switchTab(name){
   if(name==='files' && !state.loadedOnce.files){ state.loadedOnce.files = true; loadFiles(state.currentPath); }
   if(name==='settings' && !state.loadedOnce.settings){ state.loadedOnce.settings = true; refreshBotStatus(); loadEnv(); }
   else if(name==='settings'){ refreshBotStatus(); }
-  if(name==='sync' && !state.loadedOnce.sync){ state.loadedOnce.sync = true; populateSyncSelects(); }
+  if(name==='frontend' && !state.loadedOnce.frontend){ state.loadedOnce.frontend = true; loadGhFiles(''); }
 
   stopBotStatusPolling();
   if(name==='settings') startBotStatusPolling();
@@ -2597,6 +2603,39 @@ async function copyAllExport(){
   }catch(e){ toast('Không copy được: ' + e.message); }
 }
 
+async function loadGhFiles(path=''){
+  const list = document.getElementById('ghFileList');
+  list.innerHTML = '<div class="empty">Đang tải…</div>';
+  try{
+    const data = await api('/api/github/files?path=' + encodeURIComponent(path));
+    list.innerHTML = data.items.map(it => {
+      const icon = it.is_dir ? '📁' : '📄';
+      const action = it.is_dir ? `loadGhFiles('${it.path}')` : `openGhFile('${it.path}')`;
+      return `<div class="file-row" onclick="${action}">
+        <div class="file-name"><span class="file-icon">${icon}</span>${it.name}</div>
+        <span class="chevron">›</span>
+      </div>`;
+    }).join('') || '<div class="empty">Trống</div>';
+  }catch(e){ list.innerHTML = 'Lỗi: ' + e.message; }
+}
+
+let ghEditingPath = null;
+
+async function openGhFile(path){
+  const data = await api('/api/github/content?path=' + encodeURIComponent(path));
+  ghEditingPath = path;
+  const newContent = prompt('Sửa nội dung "' + path + '" rồi bấm OK để push lên GitHub:', data.content);
+  if(newContent === null || newContent === data.content) return;
+  const msg = prompt('Commit message:', 'Cập nhật ' + path + ' từ dashboard') || 'Cập nhật từ dashboard';
+  try{
+    await api('/api/github/content', {
+      method: 'PUT',
+      body: JSON.stringify({path, content: newContent, message: msg})
+    });
+    toast('Đã push lên GitHub ✓ — Cloudflare sẽ tự deploy sau ~30s');
+  }catch(e){ toast('Lỗi: ' + e.message); }
+}
+
 async function afterLogin(){
   await loadHosts();
   checkHealth();
@@ -2607,9 +2646,3 @@ checkExistingSession();
 </script>
 </body>
 </html>
-
-
-
-
-
-
