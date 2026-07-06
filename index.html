@@ -1239,6 +1239,156 @@ fileEditorEl.addEventListener('input', ()=>{
   handle.addEventListener('pointercancel', onPointerUp);
 })();
 
+const ghSearchState = { query: '', matches: [], current: -1 };
+
+function ghRenderHighlights(){
+  const ta = document.getElementById('ghEditor');
+  const hl = document.getElementById('ghEditorHighlights');
+  const text = ta.value;
+  const matches = ghSearchState.matches;
+  if(matches.length === 0){
+    hl.innerHTML = escapeHtmlForHighlight(text) + '\n';
+    return;
+  }
+  let html = '';
+  let cursor = 0;
+  matches.forEach((m, i)=>{
+    html += escapeHtmlForHighlight(text.slice(cursor, m.start));
+    const cls = i === ghSearchState.current ? ' class="mark-current"' : '';
+    html += `<mark${cls}>` + escapeHtmlForHighlight(text.slice(m.start, m.end)) + `</mark>`;
+    cursor = m.end;
+  });
+  html += escapeHtmlForHighlight(text.slice(cursor)) + '\n';
+  hl.innerHTML = html;
+}
+
+function ghUpdateFindCount(){
+  const el = document.getElementById('ghFindCount');
+  const total = ghSearchState.matches.length;
+  el.textContent = total === 0 ? '0/0' : (ghSearchState.current + 1) + '/' + total;
+}
+
+function ghSyncBackdropScroll(){
+  const ta = document.getElementById('ghEditor');
+  const bd = document.getElementById('ghEditorBackdrop');
+  bd.scrollTop = ta.scrollTop;
+  bd.scrollLeft = ta.scrollLeft;
+}
+
+function ghScrollMatchIntoView(){
+  const ta = document.getElementById('ghEditor');
+  const markEl = document.querySelector('#ghEditorHighlights mark.mark-current');
+  if(!markEl) return;
+  const target = markEl.offsetTop - (ta.clientHeight / 2) + 10;
+  ta.scrollTop = Math.max(0, target);
+  ghSyncBackdropScroll();
+}
+
+function ghSelectCurrentMatch(){
+  const ta = document.getElementById('ghEditor');
+  const m = ghSearchState.matches[ghSearchState.current];
+  if(!m) return;
+  ta.setSelectionRange(m.start, m.end);
+  requestAnimationFrame(ghScrollMatchIntoView);
+}
+
+function ghRunSearch(query, opts={}){
+  const ta = document.getElementById('ghEditor');
+  ghSearchState.query = query;
+  ghSearchState.matches = computeMatches(ta.value, query);
+  if(ghSearchState.matches.length === 0){
+    ghSearchState.current = -1;
+  } else if(opts.keepPosition && ghSearchState.current >= 0){
+    if(ghSearchState.current >= ghSearchState.matches.length) ghSearchState.current = ghSearchState.matches.length - 1;
+  } else {
+    const caret = ta.selectionStart;
+    let idx = ghSearchState.matches.findIndex(m => m.start >= caret);
+    if(idx === -1) idx = 0;
+    ghSearchState.current = idx;
+  }
+  ghRenderHighlights();
+  ghUpdateFindCount();
+  if(ghSearchState.current >= 0 && !opts.keepPosition) ghSelectCurrentMatch();
+}
+
+function ghFindNext(){
+  if(ghSearchState.matches.length === 0) return;
+  ghSearchState.current = (ghSearchState.current + 1) % ghSearchState.matches.length;
+  ghRenderHighlights();
+  ghUpdateFindCount();
+  ghSelectCurrentMatch();
+}
+
+function ghFindPrev(){
+  if(ghSearchState.matches.length === 0) return;
+  ghSearchState.current = (ghSearchState.current - 1 + ghSearchState.matches.length) % ghSearchState.matches.length;
+  ghRenderHighlights();
+  ghUpdateFindCount();
+  ghSelectCurrentMatch();
+}
+
+function ghOpenFindBar(){
+  const bar = document.getElementById('ghFindBar');
+  bar.classList.add('show');
+  const input = document.getElementById('ghFindInput');
+  input.focus();
+  input.select();
+  if(input.value) ghRunSearch(input.value);
+}
+
+function ghCloseFindBar(){
+  document.getElementById('ghFindBar').classList.remove('show');
+  ghSearchState.query = '';
+  ghSearchState.matches = [];
+  ghSearchState.current = -1;
+  ghRenderHighlights();
+  document.getElementById('ghEditor').focus();
+}
+
+function ghResetSearchState(){
+  ghSearchState.query = '';
+  ghSearchState.matches = [];
+  ghSearchState.current = -1;
+  document.getElementById('ghFindInput').value = '';
+  document.getElementById('ghFindBar').classList.remove('show');
+  document.getElementById('ghFindCount').textContent = '0/0';
+  ghRenderHighlights();
+}
+
+const ghFindInputEl = document.getElementById('ghFindInput');
+ghFindInputEl.addEventListener('input', (e)=>{ ghRunSearch(e.target.value); });
+ghFindInputEl.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    if(e.shiftKey) ghFindPrev(); else ghFindNext();
+  } else if(e.key === 'Escape'){
+    e.preventDefault();
+    ghCloseFindBar();
+  }
+});
+
+const ghEditorEl = document.getElementById('ghEditor');
+ghEditorEl.addEventListener('keydown', function(e){
+  const isCtrlF = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F');
+  if(isCtrlF){
+    e.preventDefault();
+    ghOpenFindBar();
+  } else if(e.key === 'Escape' && document.getElementById('ghFindBar').classList.contains('show')){
+    e.preventDefault();
+    ghCloseFindBar();
+  }
+});
+ghEditorEl.addEventListener('scroll', ghSyncBackdropScroll);
+ghEditorEl.addEventListener('input', ()=>{
+  const dirty = ghEditorEl.value !== ghEditingOriginal;
+  document.getElementById('ghDirtyDot').style.display = dirty ? 'inline-block' : 'none';
+  if(document.getElementById('ghFindBar').classList.contains('show') && ghSearchState.query){
+    ghRunSearch(ghSearchState.query, {keepPosition:true});
+  } else {
+    ghRenderHighlights();
+  }
+});
+
 function requestCloseFileModal(){
   const dirty = document.getElementById('fileEditor').value !== state.editingFileOriginal;
   if(dirty && !confirm('Có thay đổi chưa lưu. Đóng và bỏ thay đổi?')) return;
