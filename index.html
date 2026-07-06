@@ -337,7 +337,7 @@
     font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.4; min-height:auto;
     height:38px; max-height:96px; resize:none; overflow-y:auto; white-space:pre; padding:8px 10px;
   }
-  
+
   .host-row .field{flex:1; margin-bottom:0;}
 
   .meter{background:var(--pink-soft); border-radius:99px; height:8px; overflow:hidden; margin-top:6px;}
@@ -436,7 +436,7 @@
     </div>
     <div class="field">
       <label>Tài khoản</label>
-      <input type="text" id="loginUser" autocomplete="username">
+      <input type="text" id="loginUser" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
     </div>
     <div class="field">
       <label>Mật khẩu</label>
@@ -2253,6 +2253,7 @@ async function openFile(path){
     editor.disabled = false;
     editor._refreshGutter && editor._refreshGutter();
     renderHighlights();
+    editor.focus();
   }catch(e){
     editor.disabled = false;
     closeModal('fileModalBg');
@@ -2835,6 +2836,7 @@ async function openGhFile(path){
     editor.disabled = false;
     editor._refreshGutter && editor._refreshGutter();
     ghRenderHighlights();
+    editor.focus();
   }catch(e){
     editor.disabled = false;
     closeModal('ghModalBg');
