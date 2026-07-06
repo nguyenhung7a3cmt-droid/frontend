@@ -457,6 +457,7 @@
   <div class="eyebrow">Bot Dashboard</div>
   <h1 id="botTitle">Quản lý bot</h1>
   <div class="status-row"><span class="dot" id="statusDot"></span><span id="statusText">Đang kiểm tra kết nối…</span></div>
+  <button class="btn btn-ghost btn-sm" id="topbarLoginBtn" onclick="showLoginGate()" style="display:none; margin-top:10px;">🔑 Đăng nhập</button>
 </div>
 
 <div class="container">
@@ -873,6 +874,7 @@ async function doLoginOrRegister(){
     authToken = data.token;
     localStorage.setItem('dash_session_token', authToken);
     document.getElementById('loginGate').classList.remove('show');
+    document.getElementById('topbarLoginBtn').style.display = 'none';
     await afterLogin();
   }catch(e){
     errEl.textContent = e.message || 'Lỗi đăng nhập';
@@ -897,6 +899,7 @@ async function checkExistingSession(){
   try{
     await authFetch('/api/auth/me');
     document.getElementById('loginGate').classList.remove('show');
+    document.getElementById('topbarLoginBtn').style.display = 'none';
     await afterLogin();
   }catch(e){
     localStorage.removeItem('dash_session_token');
@@ -914,6 +917,7 @@ async function showLoginGate(){
   }
   renderLoginGate();
   document.getElementById('loginGate').classList.add('show');
+  document.getElementById('topbarLoginBtn').style.display = 'inline-flex';
 }
 
 let state = {
