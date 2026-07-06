@@ -738,7 +738,28 @@
   </div>
 </div>
 
-<div class="ctx-menu" id="ctxMenu"></div>
+<div class="modal-bg" id="ghModalBg">
+  <div class="modal" style="max-height:90vh; display:flex; flex-direction:column;">
+    <div class="modal-header">
+      <h3 id="ghModalTitle">index.html<span class="dirty-dot" id="ghDirtyDot" style="display:none;"></span></h3>
+      <span class="close-x" onclick="closeGhModal()">✕</span>
+    </div>
+    <div class="field" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+      <div class="editor-wrap" style="flex:1; min-height:300px; display:flex;">
+        <textarea id="ghEditor" spellcheck="false" wrap="off" autocapitalize="off" autocorrect="off"
+          style="flex:1; padding-left:12px; border-radius:12px;"></textarea>
+      </div>
+    </div>
+    <div class="field">
+      <label>Commit message</label>
+      <input type="text" id="ghCommitMsg" placeholder="Cập nhật từ dashboard">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="saveGhFile()">🚀 Push lên GitHub</button>
+      <button class="btn btn-ghost" onclick="closeGhModal()">Hủy</button>
+    </div>
+  </div>
+</div>
 
 <div class="export-panel-bg" id="exportPanelBg"></div>
 <div class="export-panel" id="exportPanel">
@@ -948,6 +969,7 @@ document.querySelectorAll('.modal-bg').forEach(bg=>{
   bg.addEventListener('mousedown', function(e){
     if(e.target !== bg) return;
     if(bg.id === 'fileModalBg') requestCloseFileModal();
+    else if(bg.id === 'ghModalBg') closeGhModal();
     else closeModal(bg.id);
   });
 });
@@ -1207,9 +1229,9 @@ fileEditorEl.addEventListener('input', ()=>{
   handle.addEventListener('pointercancel', onPointerUp);
 })();
 
-document.getElementById('fileEditor').addEventListener('input', ()=>{
-  const dirty = document.getElementById('fileEditor').value !== state.editingFileOriginal;
-  document.getElementById('fileDirtyDot').style.display = dirty ? 'inline-block' : 'none';
+document.getElementById('ghEditor').addEventListener('input', ()=>{
+  const dirty = document.getElementById('ghEditor').value !== ghEditingOriginal;
+  document.getElementById('ghDirtyDot').style.display = dirty ? 'inline-block' : 'none';
 });
 
 function requestCloseFileModal(){
@@ -2625,19 +2647,51 @@ async function loadGhFiles(path=''){
 }
 
 let ghEditingPath = null;
+let ghEditingOriginal = '';
 
 async function openGhFile(path){
-  const data = await api('/api/github/content?path=' + encodeURIComponent(path));
   ghEditingPath = path;
-  const newContent = prompt('Sửa nội dung "' + path + '" rồi bấm OK để push lên GitHub:', data.content);
-  if(newContent === null || newContent === data.content) return;
-  const msg = prompt('Commit message:', 'Cập nhật ' + path + ' từ dashboard') || 'Cập nhật từ dashboard';
+  ghEditingOriginal = '';
+  document.getElementById('ghModalTitle').firstChild.textContent = path;
+  document.getElementById('ghDirtyDot').style.display = 'none';
+  document.getElementById('ghCommitMsg').value = '';
+  const editor = document.getElementById('ghEditor');
+  editor.value = 'Đang tải…';
+  editor.disabled = true;
+  openModal('ghModalBg');
+  try{
+    const data = await api('/api/github/content?path=' + encodeURIComponent(path));
+    if(ghEditingPath !== path) return;
+    ghEditingOriginal = data.content;
+    editor.value = data.content;
+    editor.disabled = false;
+  }catch(e){
+    editor.disabled = false;
+    closeModal('ghModalBg');
+    toast('Lỗi: ' + e.message);
+  }
+}
+
+function closeGhModal(){
+  const editor = document.getElementById('ghEditor');
+  const dirty = !editor.disabled && editor.value !== ghEditingOriginal;
+  if(dirty && !confirm('Có thay đổi chưa lưu. Đóng và bỏ thay đổi?')) return;
+  closeModal('ghModalBg');
+}
+
+async function saveGhFile(){
+  const newContent = document.getElementById('ghEditor').value;
+  if(newContent === ghEditingOriginal){ toast('Không có thay đổi để lưu'); return; }
+  const msg = document.getElementById('ghCommitMsg').value.trim() || ('Cập nhật ' + ghEditingPath + ' từ dashboard');
   try{
     await api('/api/github/content', {
       method: 'PUT',
-      body: JSON.stringify({path, content: newContent, message: msg})
+      body: JSON.stringify({path: ghEditingPath, content: newContent, message: msg})
     });
+    ghEditingOriginal = newContent;
+    document.getElementById('ghDirtyDot').style.display = 'none';
     toast('Đã push lên GitHub ✓ — Cloudflare sẽ tự deploy sau ~30s');
+    closeModal('ghModalBg');
   }catch(e){ toast('Lỗi: ' + e.message); }
 }
 
